@@ -58,6 +58,20 @@ jobs:
       # anything real and never part of the published artifact. The Docker
       # build has its own equivalent placeholder step, scoped to its own
       # discarded build stage — see Dockerfile.
+      # `next build`'s "Collecting page data" step imports route modules to
+      # read their config, and those modules open the SQLCipher database (the
+      # root page calls getOptionalUser(), which queries `users`). With no DB
+      # file and no schema, the build fails there. The Dockerfile solves this
+      # the same way, immediately before its own `npm run build` — the two must
+      # stay in step, or CI and the image build disagree about whether the
+      # project builds. The throwaway DB this creates never leaves the runner.
+      - name: Apply migrations (needed by next build's page-data collection)
+        run: npm run db:migrate
+        env:
+          SERVER_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          JWT_SECRET: "ci-build-placeholder-not-a-real-secret-000000"
+          TMDB_API_KEY: "ci-build-placeholder"
+
       - name: Build (sanity check)
         run: npm run build
         env:
