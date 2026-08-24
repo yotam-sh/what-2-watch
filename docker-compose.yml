@@ -12,17 +12,43 @@
 # fine as-is; if you ever add a mount, keep it a directory too, even if
 # that means mounting a folder that holds just one file.
 
+# PORTAINER NOTE: this file deliberately uses `environment:` with ${VAR}
+# substitution rather than `env_file: .env`. Portainer's stack editor has no
+# `.env` beside the compose file (stacks live in Portainer's own storage and
+# its UI variables are written to `stack.env`), so `env_file: .env` fails
+# there outright. Substitution works in both worlds: Portainer supplies the
+# values from its "Environment variables" panel, and `docker compose` on a
+# shell auto-loads a neighbouring `.env` for the same purpose. Set the same
+# key/value pairs either way.
+
 services:
   app:
     image: yotamshavit/what-to-watch:latest
-    env_file:
-      - .env
+    environment:
+      # Required — the app fail-fasts at boot if any is missing/invalid.
+      - SERVER_ENCRYPTION_KEY=${SERVER_ENCRYPTION_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      # Must be "true" in production: the tunnel terminates TLS, and without
+      # this the browser silently drops the session cookie — login appears to
+      # succeed and never persists, with nothing in any log.
+      - SECURE_COOKIES=${SECURE_COOKIES:-true}
+      # Optional Tautulli enrichment is deliberately NOT listed here. Its vars
+      # are validated as "absent or non-empty", so passing an empty string
+      # (what an unset ${TAUTULLI_URL} would expand to) fails startup. Add
+      # both lines only if you actually run Tautulli.
     volumes:
       # Directory mount (see the TrueNAS note above) — holds the
       # SQLCipher-encrypted app.db (+ -wal/-shm). SERVER_ENCRYPTION_KEY
-      # (in .env, NOT in this directory) is what actually protects it; see
+      # (an env var, NOT in this directory) is what actually protects it; see
       # README.md "Backups" before you back this up or move hosts.
-      - ./data:/app/data
+      #
+      # Set DATA_PATH to an ABSOLUTE path on your pool — e.g.
+      # /mnt/tank/apps/what-to-watch/data. Under Portainer a relative path
+      # resolves inside Portainer's own storage, where the database is awkward
+      # to find and easy to miss in a snapshot. The ./data default exists only
+      # for running this file from a shell in the repo.
+      - ${DATA_PATH:-./data}:/app/data
     restart: unless-stopped
     # No `ports:` here — this is deliberate, not a forgotten mapping. The
     # app is never reachable directly on the host or LAN; every request
