@@ -49,7 +49,7 @@ export default async function ContinuePage() {
   try {
     user = await requireUser();
   } catch (err) {
-    if (err instanceof UnauthenticatedError) redirect("/login");
+    if (err instanceof UnauthenticatedError) redirect("/");
     throw err;
   }
 
@@ -57,7 +57,7 @@ export default async function ContinuePage() {
   const list = link ? await loadContinueList(user.id) : [];
 
   return (
-    <main className="min-h-screen pb-6">
+    <main className="min-h-screen pb-6 animate-content-in">
       <header className="px-4 pt-6 pb-2">
         <h1 className="text-xl font-semibold">Continue</h1>
         <p className="text-sm text-zinc-500">Pick up where you left off.</p>

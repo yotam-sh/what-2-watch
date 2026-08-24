@@ -80,6 +80,27 @@ export function SlidersIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+/** Filters — a funnel, standing in for narrowing-down. Distinct from
+ *  SlidersIcon (used by the Settings tab) so the Decide screen's "Filters"
+ *  button doesn't read as a link to Settings. */
+export function FilterIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M4 5h16l-6 7.5V19l-4 2v-8.5L4 5Z" />
+    </Icon>
+  );
+}
+
+/** Close — a plain X, used by the filter sheet's dismiss control. */
+export function CloseIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="18" y1="6" x2="6" y2="18" />
+    </Icon>
+  );
+}
+
 export function SpinnerIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props} className={`animate-spin ${props.className ?? ""}`}>

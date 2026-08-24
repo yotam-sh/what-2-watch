@@ -51,6 +51,19 @@ export function hasActiveFilters(filters: DecideFilters): boolean {
   return filters.maxRuntimeMinutes !== null || filters.decade !== null || filters.genre !== null;
 }
 
+/** Number of filter dimensions that differ from INITIAL_FILTERS — drives the
+ *  badge on the Filters button (src/components/FilterButton.tsx). A field
+ *  explicitly set back to its default (e.g. maxRuntimeMinutes: null after
+ *  having been 90) counts as inactive, same as never having been touched —
+ *  the count reflects current state, not history. */
+export function activeFilterCount(filters: DecideFilters): number {
+  let count = 0;
+  if (filters.maxRuntimeMinutes !== INITIAL_FILTERS.maxRuntimeMinutes) count++;
+  if (filters.decade !== INITIAL_FILTERS.decade) count++;
+  if (filters.genre !== INITIAL_FILTERS.genre) count++;
+  return count;
+}
+
 export interface ApiFilters {
   maxRuntimeMinutes?: number;
   decade?: number;

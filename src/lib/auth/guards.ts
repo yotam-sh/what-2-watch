@@ -1,15 +1,13 @@
 // ---------------------------------------------------------------------------
 // Route/server-component helpers for reading the current session.
 //
-// getOptionalUser() only needs the session JWT to be valid — it keeps
-// working even after a restart wipes the in-memory session store (see
-// sessionStore.ts), because user identity (id, username) lives in the JWT
-// and the DB, not in the vault-key map.
-//
-// getVaultKey() additionally needs a live sessionStore entry. It returns
-// undefined once that's gone (restart, or a session that was never fully
-// established), and callers — e.g. decrypting the Plex token in Phase 2 —
-// must treat that as "ask the user to log in again", not a 500.
+// Plex-only login (revised 2026-08-24): getOptionalUser() used to be the
+// "survives a restart" half of a two-part session (see the old sessionStore
+// getVaultKey() companion, now deleted) — now it's the *whole* session. The
+// Plex token lives under serverVault, not a per-session key, so there is
+// nothing left that a restart can invalidate: as long as the JWT cookie
+// verifies and the user row still exists, the caller is fully authenticated,
+// full stop.
 // ---------------------------------------------------------------------------
 
 import { eq } from "drizzle-orm";
@@ -18,18 +16,15 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { SESSION_COOKIE_NAME } from "./cookies";
 import { verifySessionToken } from "./jwt";
-import { getSessionVaultKey } from "./sessionStore";
 
 export interface AuthenticatedUser {
   id: string;
   username: string;
-  /** Session-store key — pass to getVaultKey() to fetch the userVault key. */
-  sid: string;
 }
 
 /** Thrown by requireUser() when there's no valid session. Callers in route
  *  handlers should catch this and return a 401; callers in server
- *  components should catch it and redirect() to /login. */
+ *  components should catch it and redirect() to the landing page ("/"). */
 export class UnauthenticatedError extends Error {
   constructor() {
     super("Not authenticated");
@@ -50,7 +45,7 @@ export async function getOptionalUser(): Promise<AuthenticatedUser | null> {
   const row = db.select().from(users).where(eq(users.id, payload.sub)).get();
   if (!row) return null;
 
-  return { id: row.id, username: row.username, sid: payload.sid };
+  return { id: row.id, username: row.plexUsername };
 }
 
 export async function requireUser(): Promise<AuthenticatedUser> {
@@ -59,10 +54,4 @@ export async function requireUser(): Promise<AuthenticatedUser> {
     throw new UnauthenticatedError();
   }
   return user;
-}
-
-/** Looks up the current session's userVault AES key. See file header for
- *  why this can legitimately return undefined for an otherwise-valid user. */
-export function getVaultKey(sid: string): Buffer | undefined {
-  return getSessionVaultKey(sid);
 }

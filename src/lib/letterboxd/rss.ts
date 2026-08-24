@@ -8,12 +8,25 @@
 //
 // Live-verified 2026-08-21 against https://letterboxd.com/dave/rss/ (an
 // unauthenticated, public, sanctioned fetch per the plan's one-time
-// allowance): the feed is exactly 100 <item>s — 50 with a
-// `letterboxd-watch-` guid (diary entries, carrying the letterboxd:/tmdb:
-// fields) and 50 with a `letterboxd-list-` guid (list stubs, carrying
-// neither). Of the 50 diary entries, 34 had `letterboxd:memberRating` and 16
+// allowance): the feed is exactly 100 <item>s — 50 diary entries and 50 list
+// stubs. Of the 50 diary entries, 34 had `letterboxd:memberRating` and 16
 // did not — confirming constraint 19 (absent, not zero, when unrated) against
 // real data, not just the spec.
+//
+// Re-verified 2026-08-24 against https://letterboxd.com/hesanka/rss/: the
+// feed is 51 <item>s, but the diary entries were split across *two* guid
+// prefixes — 47 `letterboxd-review-` and 3 `letterboxd-watch-` — plus 1
+// `letterboxd-list-` stub. A `letterboxd-review-` item is a diary entry that
+// happens to have a review attached; it is structurally identical to a
+// `letterboxd-watch-` item otherwise. Earlier code treated
+// `letterboxd-watch-` as *the* diary guid prefix and silently dropped every
+// reviewed film — wrong, and not fixable by adding a second known prefix,
+// since Letterboxd is free to mint others (rewatches, likes, ...) with no
+// notice. So diary entries are identified by *shape*, not guid: they carry
+// `letterboxd:filmTitle` and a `tmdb:movieId` or `tmdb:tvId`; list stubs
+// carry neither. The guid remains only the dedupe key (see
+// `selectNewEntries`) — it stays unique and stable across whatever prefix a
+// given entry happens to use.
 // ---------------------------------------------------------------------------
 
 import { XMLParser } from "fast-xml-parser";
@@ -35,8 +48,8 @@ export interface LetterboxdDiaryEntry {
   memberLike?: boolean;
 }
 
-const DIARY_GUID_PREFIX = "letterboxd-watch-";
-// Constraint 18: the feed's 100 items are 50 diary + 50 list stubs, and
+// Constraint 18: the feed caps at 50 diary entries (regardless of how many
+// distinct guid prefixes they're split across — see file header), and
 // `?limit=` is ignored server-side. This slice is a defensive backstop in
 // case that ever changes, not the primary mechanism — the primary
 // enforcement is simply "the feed only ever contains 50".
@@ -148,11 +161,17 @@ function yesNoToBoolean(value: unknown): boolean {
 /** Parses a raw RSS XML string into diary entries only. Deliberately pure
  *  (no network) so fixtures can exercise it in tests.
  *
+ *  A diary entry is identified by *shape*, not guid prefix — see the file
+ *  header for why: it must carry a non-empty `letterboxd:filmTitle` *and*
+ *  either `tmdb:movieId` or `tmdb:tvId`. The guid is kept only as the
+ *  dedupe key, never used to classify the item.
+ *
  *  Skips:
- *   - list-stub items (`letterboxd-list-` guid prefix, or any guid that
- *     isn't the diary prefix) — they carry no letterboxd:/tmdb: fields.
- *   - diary items missing both `tmdb:movieId` and `tmdb:tvId` — can't be
- *     joined to a title, so silently dropped rather than crashing the sync.
+ *   - list-stub items — they carry neither `letterboxd:filmTitle` nor a
+ *     tmdb id, so the shape check filters them out naturally regardless of
+ *     which guid prefix they happen to use.
+ *   - diary-shaped items missing both `tmdb:movieId` and `tmdb:tvId` — can't
+ *     be joined to a title, so silently dropped rather than crashing sync.
  *   - diary items with an unparseable `letterboxd:watchedDate`.
  */
 export function parseLetterboxdRss(xml: string): LetterboxdDiaryEntry[] {
@@ -166,7 +185,9 @@ export function parseLetterboxdRss(xml: string): LetterboxdDiaryEntry[] {
   for (const raw of rawItems) {
     const item = raw as Record<string, unknown>;
     const guid = typeof item.guid === "string" ? item.guid : "";
-    if (!guid.startsWith(DIARY_GUID_PREFIX)) continue; // list stub or unrecognized
+
+    const filmTitleRaw = item["letterboxd:filmTitle"];
+    const hasFilmTitle = typeof filmTitleRaw === "string" && filmTitleRaw.trim() !== "";
 
     const tmdbMovieId = coerceNumber(item["tmdb:movieId"]);
     const tmdbTvId = coerceNumber(item["tmdb:tvId"]);
@@ -180,15 +201,16 @@ export function parseLetterboxdRss(xml: string): LetterboxdDiaryEntry[] {
       tmdbId = tmdbTvId;
       mediaType = "tv";
     }
-    if (tmdbId === undefined || mediaType === undefined) continue; // can't join — skip
+    // Not diary-shaped (list stub, or any other non-diary item) or can't be
+    // joined to a title — skip either way, silently.
+    if (!hasFilmTitle || tmdbId === undefined || mediaType === undefined) continue;
 
     const watchedDateRaw = item["letterboxd:watchedDate"];
     const watchedDate =
       typeof watchedDateRaw === "string" ? new Date(`${watchedDateRaw}T00:00:00Z`) : undefined;
     if (!watchedDate || Number.isNaN(watchedDate.getTime())) continue;
 
-    const filmTitle =
-      typeof item["letterboxd:filmTitle"] === "string" ? (item["letterboxd:filmTitle"] as string) : "";
+    const filmTitle = filmTitleRaw as string; // hasFilmTitle already proved this is a non-empty string
     const filmYear = coerceNumber(item["letterboxd:filmYear"]);
     const isRewatch = yesNoToBoolean(item["letterboxd:rewatch"]);
     const memberLike =
@@ -200,7 +222,7 @@ export function parseLetterboxdRss(xml: string): LetterboxdDiaryEntry[] {
       guid,
       tmdbId,
       mediaType,
-      filmTitle: filmTitle || `Unknown (tmdb ${tmdbId})`,
+      filmTitle,
       filmYear,
       watchedDate,
       isRewatch,

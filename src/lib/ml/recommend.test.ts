@@ -17,7 +17,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3-multiple-ciphers";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -55,10 +54,19 @@ afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// Plex-only login (schema revised 2026-08-24, concurrent with this phase):
+// users are keyed by plexAccountId rather than username/password. `username`
+// here is just this test file's existing per-test unique handle — reused as
+// the (unique) plexAccountId so every test's makeUser() call still gets its
+// own isolated user row.
 function makeUser(username: string): string {
   const row = testDb
     .insert(schema.users)
-    .values({ username, passwordHash: "fake-hash", kdfSalt: randomBytes(16) })
+    .values({
+      plexAccountId: username,
+      plexUsername: username,
+      plexEmail: `${username}@example.com`,
+    })
     .returning()
     .get();
   return row.id;
@@ -177,6 +185,72 @@ describe("recommend() — mode candidate pools", () => {
     const results = recommend(userId, { mode: "discover" });
     expect(results.map((r) => r.tmdbId)).not.toContain(40);
     expect(results.map((r) => r.tmdbId)).toContain(41);
+  });
+
+  it("discover mode draws from the synced Plex library pool (view_count = 0) once one exists, excluding watched library items and titles outside the library entirely", async () => {
+    const { recommend } = await import("./recommend");
+    const userId = makeUser("discover-library-user");
+    makeTitle({ tmdbId: 50, mediaType: "movie", title: "OwnedUnwatched", year: 2018, runtime: 100 });
+    makeTitle({ tmdbId: 51, mediaType: "movie", title: "OwnedWatched", year: 2019, runtime: 100 });
+    makeTitle({ tmdbId: 52, mediaType: "movie", title: "NotInLibrary", year: 2020, runtime: 100 });
+    testDb
+      .insert(schema.plexItems)
+      .values([
+        {
+          userId,
+          machineIdentifier: "server-1",
+          ratingKey: "rk-50",
+          tmdbId: 50,
+          mediaType: "movie",
+          type: 1,
+          viewCount: 0,
+        },
+        {
+          userId,
+          machineIdentifier: "server-1",
+          ratingKey: "rk-51",
+          tmdbId: 51,
+          mediaType: "movie",
+          type: 1,
+          viewCount: 3,
+        },
+      ])
+      .run();
+
+    const results = recommend(userId, { mode: "discover" });
+    const ids = results.map((r) => r.tmdbId);
+    // Only the unwatched library item is a candidate — a title synced with a
+    // real view_count is excluded (it's been watched), and a title that was
+    // never in the Plex library at all doesn't get pulled in just because
+    // it happens to be unwatched too, once a real library pool exists.
+    expect(ids).toContain(50);
+    expect(ids).not.toContain(51);
+    expect(ids).not.toContain(52);
+  });
+
+  it("discover mode still excludes a library item's reconciled watch (e.g. watched on Letterboxd, not yet reflected in Plex view_count)", async () => {
+    const { recommend } = await import("./recommend");
+    const userId = makeUser("discover-library-letterboxd-user");
+    makeTitle({ tmdbId: 60, mediaType: "movie", title: "OwnedButSeenElsewhere", year: 2017, runtime: 100 });
+    testDb
+      .insert(schema.plexItems)
+      .values({
+        userId,
+        machineIdentifier: "server-1",
+        ratingKey: "rk-60",
+        tmdbId: 60,
+        mediaType: "movie",
+        type: 1,
+        viewCount: 0,
+      })
+      .run();
+    testDb
+      .insert(schema.watchEvents)
+      .values({ userId, tmdbId: 60, mediaType: "movie", source: "letterboxd", watchedAt: new Date() })
+      .run();
+
+    const results = recommend(userId, { mode: "discover" });
+    expect(results.map((r) => r.tmdbId)).not.toContain(60);
   });
 });
 

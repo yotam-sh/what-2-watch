@@ -11,6 +11,7 @@ import { syncWatchlist } from "@/lib/plex/discoverSync";
 import { PlexRequestError } from "@/lib/plex/http";
 import { getLinkedServerContext, PlexNotLinkedError, PlexUnreachableError } from "@/lib/plex/link";
 import { syncLibraries } from "@/lib/plex/librarySync";
+import { triggerPostSyncEnrichment } from "@/lib/plex/postSyncEnrich";
 import { VaultKeyUnavailableError } from "@/lib/plex/token";
 
 const SYNC_SOURCE = "plex";
@@ -62,11 +63,19 @@ export async function POST() {
     }
 
     recordSyncState(user.id, null);
+    // Fire-and-forget: kicks off a bounded background enrichment pass so
+    // the library self-heals (posters/genres/runtime/embeddings) without a
+    // manual backfill. Deliberately not awaited — see postSyncEnrich.ts's
+    // file header for why this must never delay this response or let a
+    // background failure surface as a failed sync.
+    void triggerPostSyncEnrichment();
     return NextResponse.json({
       ok: true,
       moviesSynced: result.libraryResult.moviesSynced,
       showsSynced: result.libraryResult.showsSynced,
+      libraryItemsSynced: result.libraryResult.libraryItemsSynced,
       includeGuidsWorked: result.libraryResult.includeGuidsWorked,
+      scanVariant: result.libraryResult.scanVariant,
       watchlistSynced: result.watchlistResult.synced,
       watchlistUnresolved: result.watchlistResult.unresolved,
     });

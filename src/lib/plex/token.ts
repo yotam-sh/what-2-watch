@@ -1,15 +1,17 @@
 // ---------------------------------------------------------------------------
 // Decrypts a linked user's Plex token, honouring `plex_links.key_scope`.
 //
-// 'user' (the default): the token is under the userVault key, which only
-// exists in memory for a live session (src/lib/auth/sessionStore.ts). No
-// vault key => the caller must treat this as "please log in again", not a
-// 500 — same rule sessionStore.ts documents for any userVault consumer.
-//
-// 'server': the explicit "keep syncing while I'm away" opt-in re-wraps the
-// token under SERVER_ENCRYPTION_KEY, decryptable without a live session —
-// this is what lets a background sync run for a user who isn't currently
-// logged in.
+// Plex-only login (revised 2026-08-24): every token this app writes now uses
+// 'server' — there is no password any more to derive a 'user'-scope key
+// from, and the in-memory session-key store that used to hold it
+// (sessionStore.ts) is deleted along with it. The 'user' branch is kept only
+// for defensiveness: a row could in principle still say 'user' (e.g. mid a
+// real production migration, unlike this dev DB's clean wipe — see the
+// 0003 migration's comment), and for that case there is no vault key to be
+// had any more, ever, so it always throws VaultKeyUnavailableError. That's
+// correct, not a bug: those tokens are permanently unrecoverable by design,
+// exactly as documented in userVault.ts (deliberately not deleted — it
+// remains the mechanism a future passphrase option would reuse).
 // ---------------------------------------------------------------------------
 
 import { decryptWithServerVault } from "@/lib/crypto/serverVault";

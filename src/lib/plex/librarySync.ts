@@ -15,11 +15,12 @@ import { plexItems, watchEvents } from "@/db/schema";
 import {
   fetchLibrarySections,
   rollupEpisodesToShows,
+  scanAllMovies,
   scanAllShows,
   scanWatchedEpisodes,
-  scanWatchedMovies,
   type FetchCtx,
   type NormalizedPlexItem,
+  type ScanVariantName,
   type ShowRollup,
 } from "./library";
 import { upsertTitleStub } from "./titlesStub";
@@ -194,14 +195,44 @@ export function upsertShowWatch(params: UpsertShowParams): void {
 }
 
 /** Full sync for one user's linked server: every movie library, every show
- *  library. Returns coarse counts for the sync route's response / logging. */
+ *  library. Returns coarse counts for the sync route's response / logging.
+ *
+ *  PHASE 6 "discover pool": movies now go through scanAllMovies (every movie
+ *  in the section, watched or not) instead of scanWatchedMovies — a strict
+ *  superset of the old watched-only scan, so this replaces rather than
+ *  supplements that call (no point paying for two full network scans of the
+ *  same section when one already returns everything). moviesSynced/
+ *  showsSynced keep their pre-Phase-6 meaning (count of *watched* items, so
+ *  existing UI copy — "Synced N movies, M shows" — doesn't suddenly balloon
+ *  to whole-library counts); libraryItemsSynced is the new count of
+ *  *unwatched* items written to plex_items (view_count = 0) — i.e. how many
+ *  candidates just became available to discover mode. Shows: scanAllShows
+ *  already scanned everything, but the loop below used to skip any show with
+ *  no watch rollup ("never watched — nothing to sync"). That was the actual
+ *  bug: it silently dropped unwatched shows from plex_items entirely.
+ *  upsertShowWatch already handles `rollup: undefined` correctly (viewCount
+ *  0, no watch_events row — see its own doc comment), so the fix is simply
+ *  to stop skipping. */
 export async function syncLibraries(params: {
   userId: string;
   machineIdentifier: string;
   connectionUri: string;
   token: string;
   clientIdentifier: string;
-}): Promise<{ moviesSynced: number; showsSynced: number; includeGuidsWorked: boolean | null }> {
+}): Promise<{
+  moviesSynced: number;
+  showsSynced: number;
+  /** Count of unwatched items (view_count = 0) newly written to plex_items
+   *  across movie and show sections combined — the full-library "discover
+   *  pool" size. Reported separately from moviesSynced/showsSynced so it's
+   *  visible whether the pool actually populated. */
+  libraryItemsSynced: number;
+  includeGuidsWorked: boolean | null;
+  /** Which library-scan degradation-ladder variant this PMS accepted — see
+   *  library.ts's ScanVariantName / SCAN_VARIANTS. Null only if there were
+   *  no movie or show sections to scan at all. */
+  scanVariant: ScanVariantName | null;
+}> {
   const ctx: FetchCtx = {
     connectionUri: params.connectionUri,
     token: params.token,
@@ -211,11 +242,14 @@ export async function syncLibraries(params: {
 
   let moviesSynced = 0;
   let showsSynced = 0;
+  let libraryItemsSynced = 0;
   let includeGuidsWorked: boolean | null = null;
+  let scanVariant: ScanVariantName | null = null;
 
   for (const section of sections.filter((s) => s.type === "movie")) {
-    const { items, includeGuidsWorked: worked } = await scanWatchedMovies(ctx, section.key);
+    const { items, includeGuidsWorked: worked, variantUsed } = await scanAllMovies(ctx, section.key);
     includeGuidsWorked = includeGuidsWorked ?? worked;
+    scanVariant = scanVariant ?? variantUsed;
     for (const item of items) {
       upsertMovieWatch({
         userId: params.userId,
@@ -223,20 +257,22 @@ export async function syncLibraries(params: {
         librarySectionId: section.key,
         item,
       });
-      moviesSynced += 1;
+      if (item.viewCount >= 1) {
+        moviesSynced += 1;
+      } else {
+        libraryItemsSynced += 1;
+      }
     }
   }
 
   for (const section of sections.filter((s) => s.type === "show")) {
-    const [{ items: episodes, includeGuidsWorked: episodesWorked }, shows] = await Promise.all([
-      scanWatchedEpisodes(ctx, section.key),
-      scanAllShows(ctx, section.key),
-    ]);
+    const [{ items: episodes, includeGuidsWorked: episodesWorked, variantUsed: episodesVariant }, shows] =
+      await Promise.all([scanWatchedEpisodes(ctx, section.key), scanAllShows(ctx, section.key)]);
     includeGuidsWorked = includeGuidsWorked ?? episodesWorked;
+    scanVariant = scanVariant ?? episodesVariant;
     const rollups = rollupEpisodesToShows(episodes);
     for (const show of shows) {
       const rollup = rollups.get(show.ratingKey);
-      if (!rollup) continue; // never watched — nothing to sync
       upsertShowWatch({
         userId: params.userId,
         machineIdentifier: params.machineIdentifier,
@@ -244,9 +280,13 @@ export async function syncLibraries(params: {
         show,
         rollup,
       });
-      showsSynced += 1;
+      if (rollup) {
+        showsSynced += 1;
+      } else {
+        libraryItemsSynced += 1;
+      }
     }
   }
 
-  return { moviesSynced, showsSynced, includeGuidsWorked };
+  return { moviesSynced, showsSynced, libraryItemsSynced, includeGuidsWorked, scanVariant };
 }

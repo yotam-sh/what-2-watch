@@ -58,9 +58,13 @@ npm run dev                  # http://localhost:3000
 - `npm run db:migrate` — apply pending migrations to `./data/app.db`. Also
   what `docker-entrypoint.sh` runs before starting the server in the
   container (see "Docker / deploy").
+- `npm run tmdb:backfill` — fetch TMDB metadata for any stub title (Phase
+  3). Runs automatically, bounded, after every Plex sync in production (see
+  "Bulk backfill" under "Docker / deploy") — this is for a manual one-off
+  catch-up.
 - `npm run ml:backfill` — embed any titles missing a vector (Phase 5). Needs
   the model at `ML_MODEL_DIR` (see above); downloads it there on first run
-  outside Docker.
+  outside Docker. Same automatic-vs-manual split as `tmdb:backfill` above.
 - `npm run lint` — ESLint.
 
 ## Layout
@@ -214,9 +218,46 @@ explicitly. This adds real but modest size to the image (~40MB for the
 quantized model + tokenizer files) — see "Image size" below for the current
 total.
 
+### Bulk backfill
+
+**Normal operation needs no manual step.** Every successful
+`POST /api/plex/sync` fires a bounded background enrichment pass in the same
+server process (`src/lib/plex/postSyncEnrich.ts`) — up to 200 titles get
+TMDB metadata and up to 100 get embeddings per sync, without delaying the
+sync response. Both steps are resumable (they only ever touch titles still
+missing that data), so a large library catches up over a handful of syncs
+with no operator involvement; `src/lib/tmdb/lazyEnrich.ts` additionally
+enriches on-the-fly whatever a single `/api/recommend` call actually
+surfaces, as a safety net while the background pass is still catching up.
+
+The commands below are for a large one-off catch-up instead — e.g. right
+after first linking a big Plex library, or after restoring a backup, where
+waiting on background passes across many syncs would take too long. Both
+CLIs (`src/lib/tmdb/runBackfill.ts`, `src/lib/ml/runBackfill.ts`) are baked
+into the image, invoked directly via `tsx` — the same shape
+`docker-entrypoint.sh` already uses for migrations — rather than through
+`npm run`, since the runtime stage ships only the specific files and
+dependencies each script needs, not a full local `node_modules`/`npm`
+toolchain:
+
+```bash
+# TMDB metadata (genres, cast, runtime, poster, overview) for every stub
+# title, priority-ordered (watch history, then watchlist, then the rest —
+# see backfill.ts). --limit is optional; omit it to run to completion.
+docker compose exec app node ./node_modules/tsx/dist/cli.mjs ./src/lib/tmdb/runBackfill.ts --limit 500
+
+# Embeddings for every TMDB-enriched title still missing one.
+docker compose exec app node ./node_modules/tsx/dist/cli.mjs ./src/lib/ml/runBackfill.ts
+```
+
+Both are safe to re-run or interrupt — each only selects titles still
+missing the relevant data (`genres IS NULL` / `embedding IS NULL`), so a
+Ctrl-C'd run, a crash, or an overlapping post-sync pass just picks back up
+rather than double-processing or corrupting anything.
+
 ### Image size
 
-Currently **~480MB** (`docker inspect --format='{{.Size}}'`). Breakdown, in
+Currently **~497MB** (`docker inspect --format='{{.Size}}'`). Breakdown, in
 order of contribution: `onnxruntime-node` + `sharp` native binaries (Phase
 5's ML stack) are the largest single addition, `node:22-slim` base +
 Next.js standalone server + `better-sqlite3-multiple-ciphers` come next, and
@@ -225,6 +266,17 @@ bloat — devDependencies are not shipped (only `tsx` + `esbuild`, needed to
 run `migrate.ts` outside the Next bundle — see the Dockerfile's runtime
 stage comments) — but it's worth knowing before you publish, especially if
 you're metering TrueNAS pull bandwidth.
+
+The bulk-backfill CLIs (previous section) added **~16MB** on top of that
+(measured by building before/after: 480MB → 497MB) — `src/lib/tmdb` and
+`src/lib/ml`'s source (small) plus four node_modules packages the ML runner
+needs that weren't already on disk for the Next app's own (bundled) use of
+`@huggingface/transformers`: `onnxruntime-common` (onnxruntime-node's own
+dependency, hoisted to top-level rather than nested), and `sharp`'s
+`semver`/`detect-libc`/`@img/*` (the platform-specific libvips + binding
+packages sharp's own module loader requires). Cheap enough not to
+reconsider given the CLIs are also the only way to do a large one-off
+catch-up faster than the automatic per-sync pass allows.
 
 ### Publishing a new image (CI)
 

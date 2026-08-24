@@ -9,7 +9,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { plexLinks } from "@/db/schema";
-import { getVaultKey } from "@/lib/auth/guards";
 import { getPlexServers, resolveServerConnection } from "./resources";
 import { decryptPlexToken } from "./token";
 
@@ -41,7 +40,7 @@ export interface LinkedServerContext {
  *  `forceReprobe: true` after an actual PMS call using the cached URI has
  *  failed, per constraint 12. */
 export async function getLinkedServerContext(
-  user: { id: string; sid: string },
+  user: { id: string },
   opts: { forceReprobe?: boolean } = {},
 ): Promise<LinkedServerContext> {
   const link = db.select().from(plexLinks).where(eq(plexLinks.userId, user.id)).get();
@@ -49,11 +48,13 @@ export async function getLinkedServerContext(
     throw new PlexNotLinkedError();
   }
 
-  const vaultKey = getVaultKey(user.sid);
+  // No vaultKey to pass any more (see token.ts's file header) — every
+  // current-model row is key_scope='server', which ignores this argument;
+  // a legacy 'user'-scope row correctly throws VaultKeyUnavailableError.
   const token = decryptPlexToken({
     keyScope: link.keyScope,
     tokenCiphertext: link.tokenCiphertext,
-    vaultKey,
+    vaultKey: undefined,
   });
 
   let machineIdentifier = link.machineIdentifier;

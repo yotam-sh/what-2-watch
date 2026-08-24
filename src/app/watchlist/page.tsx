@@ -44,7 +44,7 @@ export default async function WatchlistPage() {
   try {
     user = await requireUser();
   } catch (err) {
-    if (err instanceof UnauthenticatedError) redirect("/login");
+    if (err instanceof UnauthenticatedError) redirect("/");
     throw err;
   }
 
@@ -52,7 +52,7 @@ export default async function WatchlistPage() {
   const list = link ? await loadWatchlist(user.id) : [];
 
   return (
-    <main className="min-h-screen pb-6">
+    <main className="min-h-screen pb-6 animate-content-in">
       <header className="px-4 pt-6 pb-2">
         <h1 className="text-xl font-semibold">Watchlist</h1>
         <p className="text-sm text-zinc-500">From your Plex Discover watchlist.</p>

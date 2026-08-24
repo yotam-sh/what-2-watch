@@ -94,7 +94,8 @@ export function buildAuthUrl(params: {
 /** Polls a PIN exactly once. Callers are responsible for not calling this
  *  faster than MIN_PIN_POLL_INTERVAL_MS (constraint 10) — a route handler
  *  backing a browser-driven poll loop naturally satisfies this as long as
- *  the frontend's poll interval respects it; see src/app/api/plex/pin/poll. */
+ *  the frontend's poll interval respects it; see
+ *  src/app/api/auth/plex/poll (the Plex-only login flow's poll route). */
 export async function pollPin(
   pinId: number,
   code: string,
@@ -122,7 +123,7 @@ export async function pollPin(
 /** Convenience loop for non-request contexts (tests, scripts) that waits for
  *  a PIN to be claimed, sleeping at least MIN_PIN_POLL_INTERVAL_MS between
  *  polls and bounding the whole wait by the PIN's own `expiresIn` — never a
- *  hardcoded 30 minutes. The actual /api/plex/pin/poll route does NOT use
+ *  hardcoded 30 minutes. The actual /api/auth/plex/poll route does NOT use
  *  this; it does one pollPin() per browser-driven HTTP request instead, so
  *  the poll cadence is governed by the frontend's request interval and this
  *  server never independently hammers plex.tv on its own timer. */
@@ -141,6 +142,40 @@ export async function waitForPinAuth(
     await sleep(pollIntervalMs);
   }
   return null;
+}
+
+export interface PlexAccountIdentity {
+  /** Stable plex.tv account id — the find-or-create key for Plex-only login
+   *  (see src/lib/plex/account.ts). Stored as text like every other id in
+   *  this schema even though it arrives as a number on the wire. */
+  id: string;
+  username: string;
+  email: string;
+  thumb: string | null;
+}
+
+/** Resolves the Plex account identity behind a freshly-claimed token, via
+ *  the same /api/v2/user endpoint validatePlexToken uses below — this is
+ *  additive, not a rewrite of that function, since validatePlexToken only
+ *  needs the status code and this needs the body. Used exclusively by the
+ *  Plex-only login flow (src/app/api/auth/plex/poll) to turn a claimed PIN
+ *  into an account identity to find-or-create a user from. */
+export async function getPlexAccountIdentity(
+  token: string,
+  clientIdentifier: string,
+): Promise<PlexAccountIdentity> {
+  const body = await fetchPlexJson(
+    `${PLEX_TV_BASE}/user`,
+    plexHeaders(clientIdentifier, { "X-Plex-Token": token }),
+  );
+  const data = body as { id?: unknown; username?: unknown; email?: unknown; thumb?: unknown };
+  const id = coerceString(data.id);
+  const username = coerceString(data.username);
+  const email = coerceString(data.email);
+  if (!id || !username || !email) {
+    throw new Error("Plex /api/v2/user returned an unexpected shape");
+  }
+  return { id, username, email, thumb: coerceString(data.thumb) ?? null };
 }
 
 /** Validates a token by calling /api/v2/user: 200 = valid, 401 = invalid.

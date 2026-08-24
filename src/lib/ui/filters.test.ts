@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeFilterCount,
   describeActiveFilters,
   filtersReducer,
   hasActiveFilters,
@@ -48,6 +49,37 @@ describe("filtersReducer", () => {
     state = filtersReducer(state, { type: "SET_DECADE", decade: 1980 });
     state = filtersReducer(state, { type: "RESET" });
     expect(state).toEqual(INITIAL_FILTERS);
+  });
+
+  it("RESET returns the exact defaults from an arbitrary fully-populated state", () => {
+    const arbitrary: DecideFilters = { maxRuntimeMinutes: 100, decade: 2010, genre: "Action" };
+    expect(filtersReducer(arbitrary, { type: "RESET" })).toEqual(INITIAL_FILTERS);
+  });
+});
+
+describe("activeFilterCount", () => {
+  it("is 0 for the default state", () => {
+    expect(activeFilterCount(INITIAL_FILTERS)).toBe(0);
+  });
+
+  it("counts each non-default field independently", () => {
+    expect(activeFilterCount({ maxRuntimeMinutes: 90, decade: null, genre: null })).toBe(1);
+    expect(activeFilterCount({ maxRuntimeMinutes: 90, decade: 1990, genre: null })).toBe(2);
+    expect(activeFilterCount({ maxRuntimeMinutes: 90, decade: 1990, genre: "Comedy" })).toBe(3);
+  });
+
+  it("does not count a field explicitly set back to its default", () => {
+    let state = INITIAL_FILTERS;
+    state = filtersReducer(state, { type: "SET_MAX_RUNTIME", minutes: 90 });
+    state = filtersReducer(state, { type: "SET_MAX_RUNTIME", minutes: null });
+    expect(activeFilterCount(state)).toBe(0);
+  });
+
+  it("drops back to matching hasActiveFilters after RESET", () => {
+    let state: DecideFilters = { maxRuntimeMinutes: 90, decade: 1990, genre: "Comedy" };
+    state = filtersReducer(state, { type: "RESET" });
+    expect(activeFilterCount(state)).toBe(0);
+    expect(hasActiveFilters(state)).toBe(false);
   });
 });
 

@@ -1,7 +1,9 @@
 // POST /api/letterboxd/unlink — removes the stored Letterboxd link.
 // Deliberately scoped to the link only: previously synced watch_events rows
-// are left in place (same as Plex's unlink — see src/app/api/plex/unlink).
-// Full account deletion cascades everything, per schema.ts.
+// are left in place. (There is no equivalent "unlink Plex" any more — Plex
+// is the account's identity now, so removing it is account deletion; see
+// src/app/api/account/delete.) Full account deletion cascades everything,
+// per schema.ts.
 import { NextResponse } from "next/server";
 import { requireUser, UnauthenticatedError } from "@/lib/auth/guards";
 import { unlinkLetterboxdAccount } from "@/lib/letterboxd/sync";

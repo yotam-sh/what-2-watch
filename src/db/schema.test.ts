@@ -1,8 +1,10 @@
 // Integration test: applies the real migrations to a throwaway SQLite file
 // and exercises the two properties the plan calls out explicitly —
-// (1) stored secrets are opaque to a direct DB read, and (2) deleting a
-// user cascades to its dependent rows (plex_links here) rather than leaving
-// orphans, per the "account deletion must actually delete" requirement.
+// (1) the stored Plex token is opaque to a direct DB read, and (2) deleting
+// a user cascades to its dependent rows (plex_links here) rather than
+// leaving orphans, per the "account deletion must actually delete"
+// requirement. Also covers the Plex-only login model's own invariant:
+// plex_account_id is the unique identity key now that there's no username.
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -42,18 +44,15 @@ afterAll(() => {
 });
 
 describe("schema migrations", () => {
-  it("stores an opaque password hash and an opaque encrypted token", () => {
-    const plaintext = "correct horse battery staple";
+  it("stores an opaque encrypted Plex token", () => {
     const plexToken = "super-secret-plex-account-token";
 
     const user = db
       .insert(users)
       .values({
-        username: "opacity-check",
-        // Not a real Argon2id hash — a unit test doesn't need to pay that
-        // cost — but it must not equal the plaintext password.
-        passwordHash: "argon2id$fake-hash-for-test",
-        kdfSalt: randomBytes(16),
+        plexAccountId: "opacity-check",
+        plexUsername: "opacity-check",
+        plexEmail: "opacity-check@example.com",
       })
       .returning()
       .get();
@@ -69,26 +68,46 @@ describe("schema migrations", () => {
 
     // Read back with a raw query, bypassing Drizzle's typed helpers, to
     // simulate "someone opens the .db file directly".
-    const rawUser = sqlite
-      .prepare("SELECT password_hash FROM users WHERE id = ?")
-      .get(user.id) as { password_hash: string };
     const rawLink = sqlite
       .prepare("SELECT token_ciphertext FROM plex_links WHERE user_id = ?")
       .get(user.id) as { token_ciphertext: string };
 
-    expect(rawUser.password_hash).not.toBe(plaintext);
-    expect(rawUser.password_hash).not.toContain(plaintext);
     expect(rawLink.token_ciphertext).not.toContain(plexToken);
     expect(rawLink.token_ciphertext.startsWith("v1:")).toBe(true);
+  });
+
+  it("writes new plex_links rows with key_scope='server' by default", () => {
+    const user = db
+      .insert(users)
+      .values({
+        plexAccountId: "default-scope-check",
+        plexUsername: "default-scope-check",
+        plexEmail: "default-scope-check@example.com",
+      })
+      .returning()
+      .get();
+
+    const link = db
+      .insert(plexLinks)
+      .values({
+        userId: user.id,
+        clientIdentifier: randomBytes(16).toString("hex"),
+        tokenCiphertext: encrypt(randomBytes(32), "token"),
+        // keyScope deliberately omitted — exercises the column default.
+      })
+      .returning()
+      .get();
+
+    expect(link.keyScope).toBe("server");
   });
 
   it("cascades user deletion to plex_links", () => {
     const user = db
       .insert(users)
       .values({
-        username: "cascade-check",
-        passwordHash: "argon2id$fake-hash-for-test-2",
-        kdfSalt: randomBytes(16),
+        plexAccountId: "cascade-check",
+        plexUsername: "cascade-check",
+        plexEmail: "cascade-check@example.com",
       })
       .returning()
       .get();
@@ -108,12 +127,12 @@ describe("schema migrations", () => {
     expect(db.select().from(plexLinks).where(eq(plexLinks.userId, user.id)).all()).toHaveLength(0);
   });
 
-  it("enforces the unique username constraint", () => {
+  it("enforces the unique plex_account_id constraint", () => {
     db.insert(users)
       .values({
-        username: "duplicate-check",
-        passwordHash: "argon2id$fake-hash-for-test-3",
-        kdfSalt: randomBytes(16),
+        plexAccountId: "duplicate-check",
+        plexUsername: "duplicate-check",
+        plexEmail: "duplicate-check@example.com",
       })
       .run();
 
@@ -121,9 +140,9 @@ describe("schema migrations", () => {
       db
         .insert(users)
         .values({
-          username: "duplicate-check",
-          passwordHash: "argon2id$another-hash",
-          kdfSalt: randomBytes(16),
+          plexAccountId: "duplicate-check",
+          plexUsername: "someone-else",
+          plexEmail: "someone-else@example.com",
         })
         .run(),
     ).toThrow();

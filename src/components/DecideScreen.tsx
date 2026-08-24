@@ -12,10 +12,18 @@ import { useCallback, useEffect, useReducer, useRef, useState, type TouchEvent }
 import { postJson } from "@/lib/client/http";
 import { useLinkStatus } from "@/lib/client/useLinkStatus";
 import { selectDecideViewState } from "@/lib/ui/emptyState";
-import { describeActiveFilters, filtersReducer, INITIAL_FILTERS, toApiFilters } from "@/lib/ui/filters";
+import {
+  activeFilterCount,
+  describeActiveFilters,
+  filtersReducer,
+  INITIAL_FILTERS,
+  toApiFilters,
+  type DecideFilters,
+} from "@/lib/ui/filters";
 import type { DecideMode } from "@/lib/ui/modes";
 import { DecideEmptyState } from "./DecideEmptyState";
-import { FilterBar } from "./FilterBar";
+import { FilterButton } from "./FilterButton";
+import { FilterSheet } from "./FilterSheet";
 import { ModeSelector } from "./ModeSelector";
 import { PosterImage } from "./PosterImage";
 
@@ -40,6 +48,7 @@ const SWIPE_THRESHOLD_PX = 80;
 export function DecideScreen({ username }: { username: string }) {
   const [mode, setMode] = useState<DecideMode>("discover");
   const [filters, dispatch] = useReducer(filtersReducer, INITIAL_FILTERS);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [candidates, setCandidates] = useState<RecommendedCandidate[] | null>(null);
   const [fetchError, setFetchError] = useState<{ status: number; message: string } | null>(null);
   const [verdict, setVerdict] = useState<"picked" | null>(null);
@@ -49,6 +58,18 @@ export function DecideScreen({ username }: { username: string }) {
   const dragging = useRef(false);
   const startX = useRef(0);
   const dragXRef = useRef(0);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Applies the filter sheet's staged draft as the screen's real (committed)
+  // filter state, in one go — reusing the existing single-field reducer
+  // actions rather than adding a "replace the whole state" action, since
+  // React batches these three dispatches into a single re-render anyway.
+  const applyFilters = useCallback((next: DecideFilters) => {
+    dispatch({ type: "SET_MAX_RUNTIME", minutes: next.maxRuntimeMinutes });
+    dispatch({ type: "SET_DECADE", decade: next.decade });
+    dispatch({ type: "SET_GENRE", genre: next.genre });
+    setFilterSheetOpen(false);
+  }, []);
 
   const { plex, letterboxd, loading: linksLoading, refetch: refetchLinks } = useLinkStatus();
 
@@ -183,13 +204,24 @@ export function DecideScreen({ username }: { username: string }) {
       });
 
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="flex min-h-screen flex-col animate-content-in">
       <header className="px-4 pt-6">
         <p className="text-sm text-zinc-500">Hey {username}, what to watch tonight?</p>
       </header>
 
       <ModeSelector mode={mode} onChange={setMode} />
-      <FilterBar filters={filters} dispatch={dispatch} />
+      <FilterButton
+        ref={filterButtonRef}
+        activeCount={activeFilterCount(filters)}
+        onClick={() => setFilterSheetOpen(true)}
+      />
+      <FilterSheet
+        open={filterSheetOpen}
+        committedFilters={filters}
+        onApply={applyFilters}
+        onClose={() => setFilterSheetOpen(false)}
+        returnFocusRef={filterButtonRef}
+      />
 
       {viewState.kind !== "results" ? (
         <DecideEmptyState

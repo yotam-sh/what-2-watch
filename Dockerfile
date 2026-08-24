@@ -173,6 +173,58 @@ COPY --from=build --chown=appuser:appuser /app/tsconfig.json ./tsconfig.json
 COPY --from=build --chown=appuser:appuser /app/src/db ./src/db
 COPY --from=build --chown=appuser:appuser /app/src/lib/env.ts ./src/lib/env.ts
 
+# ---------------------------------------------------------------------------
+# TMDB and embedding backfill CLIs (src/lib/tmdb/runBackfill.ts,
+# src/lib/ml/runBackfill.ts — see README.md "Bulk backfill" for the exact
+# `docker compose exec` invocations). Same situation as migrate.ts above:
+# neither is imported by the Next app, so nothing traces them into
+# .next/standalone — they're run directly via tsx and need their own files
+# plus every real on-disk dependency they import, copied in explicitly.
+#
+# Source: the whole src/lib/tmdb and src/lib/ml directories, not just the
+# two runBackfill.ts entrypoints — runBackfill.ts -> backfill.ts -> store.ts
+# -> client.ts/mapper.ts for TMDB; runBackfill.ts -> embedBackfill.ts ->
+# embed.ts for ML. Test files ride along uncopied-for (same as
+# src/db/schema.test.ts above) — nothing at runtime ever imports a
+# *.test.ts file, so their presence is inert.
+#
+# Dependencies — the tsx/esbuild/drizzle-orm/zod/better-sqlite3* copies
+# above already cover everything the TMDB CLI needs (backfill.ts/store.ts/
+# client.ts pull in nothing beyond those + src/lib/env.ts, already copied).
+# The ML CLI is the hard case the file header above warns about: tsx does
+# not bundle, so every module @huggingface/transformers' NODE backend
+# actually `require()`s at load time must be resolvable on disk — not just
+# the packages already copied for the Next app's own (bundled, nft-traced)
+# use of it. Traced by reading
+# node_modules/@huggingface/transformers/dist/transformers.node.mjs — the
+# file Node's "node" export condition resolves to, distinct from the
+# browser bundle tsx would never touch — rather than assumed:
+#   - `import * as ONNX_NODE from "onnxruntime-node"` — already copied above.
+#   - `import { Tensor } from "onnxruntime-common"` — onnxruntime-node's own
+#     dependency, hoisted by npm to a TOP-LEVEL node_modules/onnxruntime-common
+#     rather than nested under onnxruntime-node/node_modules, so it needs
+#     its own explicit copy — NOT already covered by the onnxruntime-node
+#     copy above.
+#   - `import sharp from "sharp"` — already copied above, but sharp's own
+#     dist/libvips.cjs (loaded from sharp's main entry point) additionally
+#     `require()`s `semver`, `detect-libc`, `@img/colour`, and the
+#     platform-specific native packages `@img/sharp-libvips-<platform>` +
+#     `@img/sharp-<platform>-<arch>` — none of which the plain `sharp`
+#     directory copy above includes. Copying the whole `@img` scope (same
+#     approach as `@huggingface` above) picks up exactly whichever platform
+#     variant npm actually installed for this image's architecture and
+#     nothing more.
+# Verified for real, not just traced: built and ran both
+# `node ./node_modules/tsx/dist/cli.mjs ./src/lib/tmdb/runBackfill.ts` and
+# the ml/ equivalent inside an actual container — see README.md.
+# ---------------------------------------------------------------------------
+COPY --from=build --chown=appuser:appuser /app/node_modules/onnxruntime-common ./node_modules/onnxruntime-common
+COPY --from=build --chown=appuser:appuser /app/node_modules/@img ./node_modules/@img
+COPY --from=build --chown=appuser:appuser /app/node_modules/detect-libc ./node_modules/detect-libc
+COPY --from=build --chown=appuser:appuser /app/node_modules/semver ./node_modules/semver
+COPY --from=build --chown=appuser:appuser /app/src/lib/tmdb ./src/lib/tmdb
+COPY --from=build --chown=appuser:appuser /app/src/lib/ml ./src/lib/ml
+
 COPY --chown=appuser:appuser docker-entrypoint.sh ./docker-entrypoint.sh
 
 # `.next/standalone` is NOT clean of the build stage's throwaway database.

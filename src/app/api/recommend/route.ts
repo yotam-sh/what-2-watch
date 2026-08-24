@@ -10,6 +10,7 @@ import { requireUser, UnauthenticatedError } from "@/lib/auth/guards";
 import { recordShown } from "@/lib/ml/feedback";
 import { recommend, type RecommendMode, type RecommendOptions } from "@/lib/ml/recommend";
 import type { ScoreFilters } from "@/lib/ml/score";
+import { lazilyEnrichStubCandidates } from "@/lib/tmdb/lazyEnrich";
 
 const VALID_MODES: RecommendMode[] = ["rewatch", "watchlist", "discover", "continue", "binge"];
 
@@ -61,6 +62,17 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: "Failed to generate recommendations.", detail: message }, { status: 500 });
+  }
+
+  try {
+    // Enrich any still-stub candidates about to be surfaced (bounded — see
+    // lazyEnrich.ts). Best-effort: a TMDB failure/rate-limit here must never
+    // turn a successful recommendation into a 500, so this degrades to
+    // returning the un-enriched stub data rather than throwing.
+    candidates = await lazilyEnrichStubCandidates(candidates);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[api/recommend] lazy enrichment failed", err);
   }
 
   try {

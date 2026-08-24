@@ -44,3 +44,31 @@ body {
   min-height: 44px;
   min-width: 44px;
 }
+
+/* Brief fade/rise applied to a route's real content the moment it mounts
+   (i.e. the instant a loading.tsx skeleton is swapped out for the actual
+   Server Component output). Short on purpose — this masks a brief data
+   wait, it isn't a decorative flourish, and a slow animation on a fast page
+   reads as slower than no animation at all. Opacity/transform only, so the
+   reduced-motion override below can disable the movement without affecting
+   layout. */
+@keyframes content-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-content-in {
+  animation: content-in 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-content-in {
+    animation: none;
+  }
+}

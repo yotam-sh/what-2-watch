@@ -4,8 +4,9 @@
 // CONSTRAINT 14: `discover.provider.plex.tv` inconsistently returns the
 // watchlist items under `MediaContainer.Video` instead of the expected
 // `MediaContainer.Metadata` — this has broken other projects in production.
-// extractMediaContainerItems() below is the one place that guard lives; every
-// caller must go through it rather than reading `.Metadata` directly.
+// extractMediaContainerItems() (now shared, see mediaContainer.ts) is the
+// one place that guard lives; every caller must go through it rather than
+// reading `.Metadata` directly.
 //
 // Do NOT use `metadata.provider.plex.tv` — deprecated, broke for third
 // parties in Oct 2025.
@@ -19,26 +20,15 @@
 import { plexHeaders } from "./headers";
 import { extractExternalIds, type ExternalIds, type GuidBearingItem } from "./guid";
 import { fetchPlexJson } from "./http";
-import { coerceArray, coerceInt, coerceString } from "./util";
+import { extractMediaContainerItems, type MediaContainerLike } from "./mediaContainer";
+import { coerceInt, coerceString } from "./util";
 
 const DISCOVER_BASE = "https://discover.provider.plex.tv";
 
-export interface MediaContainerLike {
-  Metadata?: unknown[] | unknown;
-  Video?: unknown[] | unknown;
-  Directory?: unknown[] | unknown;
-}
-
-/** CONSTRAINT 14's guard, isolated as a pure function so it's directly unit
- *  testable: `Metadata ?? Video ?? Directory ?? []`, in that order, with
- *  none of the three assumed present. */
-export function extractMediaContainerItems(container: MediaContainerLike | null | undefined): unknown[] {
-  if (!container) return [];
-  if (container.Metadata !== undefined) return coerceArray(container.Metadata);
-  if (container.Video !== undefined) return coerceArray(container.Video);
-  if (container.Directory !== undefined) return coerceArray(container.Directory);
-  return [];
-}
+// Re-exported for backward compatibility — the guard itself now lives in
+// mediaContainer.ts (bug A) so library.ts can share it too, without
+// duplicating the logic.
+export { extractMediaContainerItems, type MediaContainerLike };
 
 export interface WatchlistEntry {
   ratingKey: string;

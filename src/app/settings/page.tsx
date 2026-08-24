@@ -8,7 +8,7 @@ export default async function SettingsPage() {
   try {
     user = await requireUser();
   } catch (err) {
-    if (err instanceof UnauthenticatedError) redirect("/login");
+    if (err instanceof UnauthenticatedError) redirect("/");
     throw err;
   }
 

@@ -187,6 +187,40 @@ interface ScoredCandidate extends FilterableCandidate, ScoredKey {
   why: string[];
 }
 
+/** DISCOVER MODE (Phase 6 "discover pool"): the primary candidate pool is
+ *  the user's own Plex library — items synced with view_count = 0, i.e.
+ *  "you already own this, you just haven't watched it" — via plexAgg, which
+ *  is already keyed by (tmdbId, mediaType) and already carries the per-title
+ *  max viewCount across every plex_items row for this user (see
+ *  aggregatePlexItemsByTitle above). A title is still excluded if the
+ *  *reconciled* watch history (watch_events, both Plex and Letterboxd) says
+ *  it was actually watched — a Plex view_count of 0 doesn't rule out having
+ *  watched it on Letterboxd, or having watched a duplicate copy that rolled
+ *  up into a different plex_items row.
+ *
+ *  COLD START (constraint 23) / not-yet-synced fallback: before Phase 6, a
+ *  full-library sync never ran, so no plex_items row is unwatched-and-linked
+ *  for anyone — this pool would always be empty. If it comes back empty
+ *  (brand-new user, or a user whose Plex library sync hasn't been run since
+ *  linking, or one whose whole library happens to be already watched),
+ *  fall back to the pre-Phase-6 behavior: the whole `titles` catalog minus
+ *  watched, so discover still returns *something* rather than nothing. */
+function buildDiscoverPool(
+  allTitles: TitleRow[],
+  plexAgg: Map<string, PlexItemAgg>,
+  watchedKeys: Set<string>,
+): TitleRow[] {
+  const libraryPool = allTitles.filter((t) => {
+    const key = titleKey({ tmdbId: t.tmdbId, mediaType: t.mediaType as MediaType });
+    const agg = plexAgg.get(key);
+    return agg !== undefined && agg.viewCount === 0 && !watchedKeys.has(key);
+  });
+  if (libraryPool.length > 0) return libraryPool;
+  return allTitles.filter(
+    (t) => !watchedKeys.has(titleKey({ tmdbId: t.tmdbId, mediaType: t.mediaType as MediaType })),
+  );
+}
+
 function buildCandidatePool(
   mode: Exclude<RecommendMode, "binge">,
   userId: string,
@@ -195,9 +229,7 @@ function buildCandidatePool(
   watchedKeys: Set<string>,
 ): TitleRow[] {
   if (mode === "discover") {
-    return allTitles.filter(
-      (t) => !watchedKeys.has(titleKey({ tmdbId: t.tmdbId, mediaType: t.mediaType as MediaType })),
-    );
+    return buildDiscoverPool(allTitles, plexAgg, watchedKeys);
   }
   if (mode === "rewatch") {
     // "must have view_count >= 1" per the plan — Plex-specific signal, not

@@ -53,25 +53,30 @@ const createdAt = () =>
     .$defaultFn(() => new Date());
 
 // ---- users ----
+//
+// Plex-only login (revised 2026-08-24): identity is the Plex account, not a
+// local username/password. `plexAccountId` is the stable id plex.tv's
+// `/api/v2/user` returns for a token and is therefore the natural key for
+// find-or-create (see src/lib/plex/account.ts) — the profile fields below it
+// are display-only and refreshed on every login, since a Plex username or
+// email can change but the account id can't. There is deliberately no
+// password/kdf_salt any more: the consequence the user explicitly accepted
+// is that the Plex token can no longer be encrypted under a password-derived
+// key (there is no password), so it moves to serverVault — see
+// plex_links.key_scope below and src/lib/crypto/serverVault.ts.
 
 export const users = sqliteTable(
   "users",
   {
     id: uuidPk(),
-    username: text("username").notNull(),
-    // Argon2id PHC-encoded hash (via @node-rs/argon2's `hash()`), NOT the raw
-    // vault key material.
-    passwordHash: text("password_hash").notNull(),
-    // Salt for deriving the userVault AES key from the password. Deliberately
-    // a *separate* random salt from whatever Argon2id embeds in
-    // `passwordHash` — reusing the password-hash salt as encryption-key
-    // material would mean the password verifier and the encryption key are
-    // derived from correlated inputs, which is exactly what a dedicated KDF
-    // salt is meant to avoid. See src/lib/crypto/userVault.ts.
-    kdfSalt: blob("kdf_salt", { mode: "buffer" }).notNull(),
+    plexAccountId: text("plex_account_id").notNull(),
+    plexUsername: text("plex_username").notNull(),
+    plexEmail: text("plex_email").notNull(),
+    // Nullable: Plex accounts without a custom avatar have no thumb URL.
+    plexThumb: text("plex_thumb"),
     createdAt: createdAt(),
   },
-  (table) => [uniqueIndex("users_username_unique").on(table.username)],
+  (table) => [uniqueIndex("users_plex_account_id_unique").on(table.plexAccountId)],
 );
 
 // ---- plex_links ----
@@ -93,11 +98,16 @@ export const plexLinks = sqliteTable(
     // sibling column would just create a second copy that could drift out
     // of sync with the one actually used to decrypt.
     tokenCiphertext: text("token_ciphertext").notNull(),
-    // Which vault encrypted this token. 'user' = Argon2id(password) key,
-    // only available while the owner has a live session (the default,
-    // privacy-preserving state). 'server' = SERVER_ENCRYPTION_KEY, only ever
-    // set via the explicit opt-in "keep syncing while I'm away" flow.
-    keyScope: text("key_scope").notNull().default("user"),
+    // Which vault encrypted this token. Always 'server' for every row the
+    // app writes post Plex-only-login migration (src/lib/plex/account.ts) —
+    // there is no password any more to derive a 'user'-scope key from, and
+    // the in-memory session-key store that used to hold it (sessionStore.ts)
+    // was deleted along with it. 'user' stays in the CHECK constraint below
+    // only so a hypothetical future passphrase option — userVault.ts is
+    // deliberately not deleted, see that file's header — wouldn't need a
+    // schema change to reuse it. src/lib/plex/token.ts still branches on
+    // this column for exactly that reason.
+    keyScope: text("key_scope").notNull().default("server"),
     machineIdentifier: text("machine_identifier"),
     cachedConnectionUri: text("cached_connection_uri"),
     connectionCheckedAt: integer("connection_checked_at", { mode: "timestamp" }),

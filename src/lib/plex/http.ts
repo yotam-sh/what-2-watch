@@ -10,6 +10,8 @@
 // mislabeled-but-actually-JSON response is cheaper to detect than to miss.
 // ---------------------------------------------------------------------------
 
+import http from "node:http";
+import https from "node:https";
 import { XMLParser } from "fast-xml-parser";
 
 const xmlParser = new XMLParser({
@@ -68,4 +70,74 @@ export async function fetchPlexJson(
   }
   const contentType = res.headers.get("content-type") ?? "";
   return parsePlexBody(contentType, bodyText);
+}
+
+// ---------------------------------------------------------------------------
+// Bug B: fetch() cannot send a literal, un-encoded `>` in a query string.
+//
+// fetch()/Request always route a string URL through the WHATWG URL parser,
+// and the URL Standard's "query percent-encode set" includes `<` and `>` —
+// so `new URL("...?viewCount>=1")` unconditionally rewrites that to
+// `...?viewCount%3E=1` when it serializes the request. This was verified
+// empirically against a real Node http server capturing the raw request
+// line: a string built with a bare `>` still arrives on the wire percent-
+// encoded. There is no fetch()-level option to suppress this — it's
+// mandated by the spec's serializer, not an encodeURIComponent() call this
+// app controls.
+//
+// `viewCount>=1`'s `>` needs to survive completely untouched for PMS's own
+// filter-query parsing to recognize it (see library.ts's ladder rung 1-3).
+// The only way to guarantee that is to skip the URL object entirely and
+// hand Node's http/https module a pre-built path string, which is written
+// to the socket byte-for-byte with no re-encoding pass.
+// ---------------------------------------------------------------------------
+
+/** Like fetchPlexJson, but issues the request via Node's http/https module
+ *  directly instead of fetch(), so `pathWithQuery` reaches the server
+ *  exactly as given — no WHATWG URL re-encoding of characters like `>`.
+ *  `origin` is parsed only for protocol/host/port; it never touches
+ *  `pathWithQuery`. Not used for the general case (fetchPlexJson above
+ *  covers everything else) — only where a literal character in the query
+ *  must survive to the wire untouched. */
+export async function fetchPlexJsonRawPath(
+  origin: string,
+  pathWithQuery: string,
+  headers: Record<string, string>,
+): Promise<unknown> {
+  const originUrl = new URL(origin);
+  const client = originUrl.protocol === "https:" ? https : http;
+  const port = originUrl.port || (originUrl.protocol === "https:" ? 443 : 80);
+
+  const { status, contentType, text } = await new Promise<{ status: number; contentType: string; text: string }>(
+    (resolve, reject) => {
+      const req = client.request(
+        {
+          hostname: originUrl.hostname,
+          port,
+          path: pathWithQuery,
+          method: "GET",
+          headers,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => {
+            resolve({
+              status: res.statusCode ?? 0,
+              contentType: res.headers["content-type"] ?? "",
+              text: Buffer.concat(chunks).toString("utf8"),
+            });
+          });
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    },
+  );
+
+  const url = `${origin}${pathWithQuery}`;
+  if (status < 200 || status >= 300) {
+    throw new PlexRequestError(`Plex request failed (${status}): ${url}`, status, url);
+  }
+  return parsePlexBody(contentType, text);
 }

@@ -97,11 +97,8 @@ export function DecideEmptyState({
       return (
         <Wrap>
           <h2 className="text-lg font-semibold">Your session expired</h2>
-          <p className="max-w-xs text-zinc-500">
-            This can happen after a server restart — per-user encryption means the server can only
-            decrypt your Plex token while you&apos;re actively logged in. Log in again to continue.
-          </p>
-          <PrimaryLink href="/login">Log in again</PrimaryLink>
+          <p className="max-w-xs text-zinc-500">Sign in with Plex again to continue.</p>
+          <PrimaryLink href="/">Sign in again</PrimaryLink>
         </Wrap>
       );
 

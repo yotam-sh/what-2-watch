@@ -65,7 +65,11 @@ export function ensureTitleStub(
     .run();
 }
 
-function getTitleRow(tmdbId: number, mediaType: MediaType) {
+/** Exported so callers that need the full row after confirming/forcing
+ *  enrichment (e.g. lazyEnrich.ts, refreshing a stub candidate's display
+ *  fields once it's been enriched on demand) don't have to re-implement
+ *  this lookup. */
+export function getTitleRow(tmdbId: number, mediaType: MediaType) {
   return db
     .select()
     .from(titles)

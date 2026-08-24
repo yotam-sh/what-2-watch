@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { parsePlexBody } from "./http";
+import http, { type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterEach, describe, expect, it } from "vitest";
+import { fetchPlexJson, fetchPlexJsonRawPath, parsePlexBody } from "./http";
 
 describe("parsePlexBody", () => {
   it("parses JSON when Content-Type says json", () => {
@@ -31,5 +33,63 @@ describe("parsePlexBody", () => {
     };
     expect(Array.isArray(result.MediaContainer.Directory)).toBe(true);
     expect(result.MediaContainer.Directory).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug B — wire-level proof. These spin up a real local HTTP server and
+// inspect the raw request line the server actually received (`req.url`),
+// rather than mocking global.fetch — mocking fetch only proves what this
+// app *intended* to send, not what a URL-parsing layer underneath it might
+// silently rewrite. That distinction is the entire bug: `viewCount>=1` was
+// always intended, but the wire form is what PMS actually evaluates.
+// ---------------------------------------------------------------------------
+describe("fetch() vs fetchPlexJsonRawPath — what actually reaches the wire", () => {
+  let server: Server | undefined;
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  function startEchoServer(): Promise<{ origin: string; requestedUrls: string[] }> {
+    const requestedUrls: string[] = [];
+    return new Promise((resolve) => {
+      server = http.createServer((req, res) => {
+        requestedUrls.push(req.url ?? "");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+      server.listen(0, "127.0.0.1", () => {
+        const port = (server!.address() as AddressInfo).port;
+        resolve({ origin: `http://127.0.0.1:${port}`, requestedUrls });
+      });
+    });
+  }
+
+  it("fetchPlexJson (fetch()-based) percent-encodes a literal '>' in the query — it cannot send one raw", async () => {
+    const { origin, requestedUrls } = await startEchoServer();
+
+    await fetchPlexJson(`${origin}/library/sections/1/all?type=1&viewCount>=1&sort=lastViewedAt:desc`, {});
+
+    // This is the WHATWG URL Standard's query percent-encode set at work,
+    // not a bug in this app's string-building: `>` is always rewritten to
+    // %3E when a string URL is handed to fetch(). Confirmed against a real
+    // Node http server, not just `new URL()` in isolation.
+    expect(requestedUrls[0]).toBe("/library/sections/1/all?type=1&viewCount%3E=1&sort=lastViewedAt:desc");
+    expect(requestedUrls[0]).not.toContain("viewCount>=1");
+  });
+
+  it("fetchPlexJsonRawPath sends the literal '>=' on the wire, untouched", async () => {
+    const { origin, requestedUrls } = await startEchoServer();
+
+    await fetchPlexJsonRawPath(
+      origin,
+      "/library/sections/1/all?type=1&viewCount>=1&sort=lastViewedAt:desc",
+      {},
+    );
+
+    expect(requestedUrls[0]).toBe("/library/sections/1/all?type=1&viewCount>=1&sort=lastViewedAt:desc");
+    expect(requestedUrls[0]).toContain("viewCount>=1");
+    expect(requestedUrls[0]).not.toContain("%3E");
   });
 });
