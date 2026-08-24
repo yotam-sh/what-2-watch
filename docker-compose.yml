@@ -1,0 +1,47 @@
+# Production deploy — TrueNAS SCALE, "Custom App" via **Docker Compose**
+# (not the plain install-form UI). Pulls the image already published by
+# .github/workflows/publish.yml; this file intentionally has no `build:` —
+# the NAS should never need a Node/native-toolchain build environment just
+# to run this app, and a pull is the whole point of publish.yml existing.
+#
+# TrueNAS mount lesson (hard-won — see
+# ../stark-agent/.dashboard/README.md for the fuller story of the same
+# issue on a different app): **single-file host-path mounts are unreliable
+# on TrueNAS** — they can silently resolve to the wrong or empty content.
+# Mount directories only. `./data` below is already a directory, so it's
+# fine as-is; if you ever add a mount, keep it a directory too, even if
+# that means mounting a folder that holds just one file.
+
+services:
+  app:
+    image: yotamshavit/what-to-watch:latest
+    env_file:
+      - .env
+    volumes:
+      # Directory mount (see the TrueNAS note above) — holds the
+      # SQLCipher-encrypted app.db (+ -wal/-shm). SERVER_ENCRYPTION_KEY
+      # (in .env, NOT in this directory) is what actually protects it; see
+      # README.md "Backups" before you back this up or move hosts.
+      - ./data:/app/data
+    restart: unless-stopped
+    # No `ports:` here — this is deliberate, not a forgotten mapping. The
+    # app is never reachable directly on the host or LAN; every request
+    # arrives through the `cloudflared` tunnel below, which reaches this
+    # container over the compose network's internal DNS (`http://app:3000`,
+    # matching `EXPOSE 3000` in the Dockerfile). Publishing a host port here
+    # would quietly reopen the exact inbound-port exposure the tunnel
+    # exists to avoid — see the master plan, "Exposure: Cloudflare Tunnel +
+    # Access; no ports opened on the NAS."
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      # From the Cloudflare Zero Trust dashboard: Networks > Tunnels >
+      # Create a tunnel > Docker (the "connector" token, a long string
+      # cloudflared decodes itself — not an API token). Put it in .env,
+      # never inline here; see README.md "Cloudflare Tunnel setup".
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - app
+    restart: unless-stopped

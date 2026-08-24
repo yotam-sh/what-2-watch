@@ -1,0 +1,99 @@
+name: Publish
+
+# Builds and publishes the production image on a version tag (v1.2.3).
+# Nothing in this repo has CI today — this is what turns a TrueNAS deploy
+# into "pull a published image" instead of "build on the NAS" (which the
+# NAS's compose file deliberately does not do — see docker-compose.yml).
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Tags are pushed once and shouldn't race themselves; a stray double-push of
+# the same tag cancels the older run rather than publishing twice.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # --- Gate: tests must pass before anything below can publish. -------
+      # A failing suite must never produce a published image. GitHub Actions
+      # stops the job at the first failing step, so nothing after this runs
+      # if it fails — there is deliberately no `continue-on-error` here.
+      - name: Run tests
+        run: npm run test
+
+      # --- Gate: a plain (non-Docker) production build. --------------------
+      # Cheaper and faster to fail than the full multi-stage Docker build
+      # below, so real build breakage (a type error, a bad import) is caught
+      # here first. src/lib/env.ts validates these three vars at
+      # build/import time (see src/lib/env.test.ts, vitest.config.ts) —
+      # these are syntactically-valid placeholders only, never used for
+      # anything real and never part of the published artifact. The Docker
+      # build has its own equivalent placeholder step, scoped to its own
+      # discarded build stage — see Dockerfile.
+      - name: Build (sanity check)
+        run: npm run build
+        env:
+          SERVER_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          JWT_SECRET: "ci-build-placeholder-not-a-real-secret-000000"
+          TMDB_API_KEY: "ci-build-placeholder"
+
+      - name: Derive image tags from the pushed tag
+        id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # --- Build + push. ----------------------------------------------------
+      # linux/amd64 only, deliberately — see the note below. Buildx caching
+      # is scoped to this repo's GHA cache so repeat publishes (a patch
+      # release right after another) don't recompile better-sqlite3-multiple-
+      # ciphers or re-download the ML model from scratch every time.
+      #
+      # Why not linux/arm64 too: this image compiles/vendors THREE
+      # platform-specific native pieces — better-sqlite3-multiple-ciphers
+      # (node-gyp fallback if no prebuilt binary matches), onnxruntime-node,
+      # and sharp (both fetch prebuilt platform binaries during `npm ci`).
+      # Building arm64 here would mean doing all of that under QEMU
+      # emulation (buildx's only path to a foreign arch on an amd64 runner),
+      # which is where node-gyp compilation in particular gets slow and
+      # flaky rather than just slower. TrueNAS boxes in practice run amd64;
+      # add `linux/arm64` to `platforms` below (and drop `python3 make g++`
+      # complications on a native arm64 runner instead of QEMU, if one is
+      # ever available) if that changes.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            yotamshavit/what-to-watch:${{ steps.meta.outputs.version }}
+            yotamshavit/what-to-watch:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

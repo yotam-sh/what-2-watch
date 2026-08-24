@@ -1,0 +1,20 @@
+# Normalize line endings to LF in the repository regardless of checkout platform.
+#
+# This is load-bearing, not cosmetic: docker-entrypoint.sh and the Dockerfile are
+# executed inside a Linux container. If they are ever checked out with CRLF (the
+# Windows default), the container fails at startup with the notoriously opaque
+# "bad interpreter: /bin/sh^M". Forcing LF here means a clone on any OS still
+# produces a working image.
+
+* text=auto eol=lf
+
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# Binary assets — never touch these.
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary

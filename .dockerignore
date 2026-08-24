@@ -1,0 +1,59 @@
+# Security-critical file — this is what keeps secrets and the encrypted
+# database out of published images. Getting .env or data/ into an image is
+# a genuine credential/data leak (docker history / any pull of the image
+# exposes every layer), not just repo hygiene. Verify after every change
+# here by inspecting a built image's filesystem, not by re-reading this
+# file — see README.md "Docker / deploy" for the check.
+
+# Secrets — never build these into an image. Real deploy secrets are
+# injected at runtime via `env_file` / orchestrator secrets, not baked in.
+.env
+.env.*
+!.env.example
+
+# App data — the SQLCipher-encrypted DB (and any dev/plaintext DB) belongs
+# on the mounted volume, never in an image layer.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Host-built artifacts — node_modules is compiled for Windows on this
+# machine and is useless (or actively broken, for the native module) inside
+# the Linux image; .next is rebuilt fresh in the `build` stage.
+node_modules
+.next
+out
+build
+dist
+
+# VCS / agent tooling — not part of the shipped app.
+.git
+.gitignore
+.claude
+.cache
+AGENTS.md
+CLAUDE.md
+
+# Editor / OS cruft.
+.vscode
+.idea
+.DS_Store
+*.pem
+
+# Logs / debug.
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Test artifacts / coverage / typecheck cache — not needed to build or run.
+coverage
+test-results
+playwright-report
+*.tsbuildinfo
+next-env.d.ts
+
+# Docs not needed inside the image (kept in the repo, not the build context).
+README.md
