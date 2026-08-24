@@ -5,36 +5,64 @@
 // how the user signed in (see src/components/PlexSignInCard.tsx), so this
 // screen only offers what's still meaningful post-login — triggering a
 // sync and seeing whether a server connection has been confirmed.
-import { useState } from "react";
+//
+// Plex sync is a background job now (see src/lib/plex/syncJob.ts and
+// src/lib/client/plexSync.ts) — POST /api/plex/sync returns immediately, so
+// this component polls GET /api/plex/sync/status for progress rather than
+// awaiting one long request. On mount it checks status once, unprompted:
+// a page reload mid-sync must not show an idle "Sync now" button while a
+// job is actually still running server-side.
+import { useEffect, useRef, useState } from "react";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { postJson } from "@/lib/client/http";
+import { describeSyncPhase, getPlexSyncStatus, IDLE_SYNC_JOB, runPlexSync, type PlexSyncJob } from "@/lib/client/plexSync";
 import { useLinkStatus } from "@/lib/client/useLinkStatus";
+
+function summarizeSync(job: PlexSyncJob): string {
+  if (job.status === "failed") {
+    return job.error ?? "Sync failed.";
+  }
+  return (
+    `Synced ${job.moviesSynced ?? 0} movies, ${job.showsSynced ?? 0} shows, ${job.watchlistSynced ?? 0} watchlist items. ` +
+    `${job.libraryItemsSynced ?? 0} unwatched library items are now available to discover.`
+  );
+}
 
 function PlexSection() {
   const { plex, loading, refetch } = useLinkStatus();
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [job, setJob] = useState<PlexSyncJob>(IDLE_SYNC_JOB);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    // Survive a page reload mid-sync: ask the server whether a job is
+    // already in flight for this user before rendering an idle button.
+    getPlexSyncStatus().then((result) => {
+      if (!mounted.current || !result.data) return;
+      setJob(result.data);
+      if (result.data.status === "running") {
+        void runPlexSync((update) => {
+          if (mounted.current) setJob(update);
+        });
+      }
+    });
+  }, []);
 
   async function handleSync() {
-    setSyncing(true);
-    setSyncMessage(null);
-    const result = await postJson<{
-      moviesSynced: number;
-      showsSynced: number;
-      libraryItemsSynced: number;
-      watchlistSynced: number;
-    }>("/api/plex/sync");
-    setSyncing(false);
-    if (!result.ok) {
-      setSyncMessage(result.error ?? "Sync failed.");
-      return;
-    }
-    setSyncMessage(
-      `Synced ${result.data?.moviesSynced ?? 0} movies, ${result.data?.showsSynced ?? 0} shows, ${result.data?.watchlistSynced ?? 0} watchlist items. ` +
-        `${result.data?.libraryItemsSynced ?? 0} unwatched library items are now available to discover.`,
-    );
+    setJob((prev) => ({ ...IDLE_SYNC_JOB, status: "running", phase: prev.phase ?? "scanning-library" }));
+    const finalJob = await runPlexSync((update) => {
+      if (mounted.current) setJob(update);
+    });
+    if (mounted.current) setJob(finalJob);
     refetch();
   }
+
+  const syncing = job.status === "running";
 
   return (
     <section className="border-t border-zinc-200 px-4 py-6 dark:border-zinc-800">
@@ -56,7 +84,12 @@ function PlexSection() {
           >
             {syncing ? "Syncing..." : "Sync now"}
           </button>
-          {syncMessage && <p className="text-xs text-zinc-500">{syncMessage}</p>}
+          {syncing && <p className="text-xs text-zinc-500">{describeSyncPhase(job)}</p>}
+          {(job.status === "completed" || job.status === "failed") && (
+            <p className={`text-xs ${job.status === "failed" ? "text-red-600 dark:text-red-400" : "text-zinc-500"}`}>
+              {summarizeSync(job)}
+            </p>
+          )}
         </div>
       )}
     </section>

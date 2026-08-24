@@ -10,6 +10,7 @@
 // brief calls "load-bearing, not decoration."
 import { useCallback, useEffect, useReducer, useRef, useState, type TouchEvent } from "react";
 import { postJson } from "@/lib/client/http";
+import { runPlexSync } from "@/lib/client/plexSync";
 import { useLinkStatus } from "@/lib/client/useLinkStatus";
 import { selectDecideViewState } from "@/lib/ui/emptyState";
 import {
@@ -153,8 +154,13 @@ export function DecideScreen({ username }: { username: string }) {
 
   async function handleSync() {
     setSyncing(true);
+    // Plex sync is a background job now (src/lib/plex/syncJob.ts) — POST
+    // /api/plex/sync returns immediately, so runPlexSync() polls status
+    // until it settles. Awaited here (rather than fire-and-forget) because
+    // this screen's whole point is rolling fresh candidates right after —
+    // rolling before the sync actually finished would just show stale data.
     await Promise.all([
-      plex?.linked ? postJson("/api/plex/sync") : Promise.resolve(),
+      plex?.linked ? runPlexSync() : Promise.resolve(),
       letterboxd?.linked ? postJson("/api/letterboxd/sync") : Promise.resolve(),
     ]);
     await refetchLinks();

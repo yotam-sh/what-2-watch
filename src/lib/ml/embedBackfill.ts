@@ -17,8 +17,30 @@
 //
 // RATE-LIMITED: a fixed delay between batches (default 500ms) keeps this
 // from pegging the CPU on a home NAS that may simultaneously be serving Plex
-// transcodes. This is an explicit, on-demand job (see runBackfill.ts) —
-// never triggered inline in a request path.
+// transcodes. This is an explicit, on-demand job when run via runBackfill.ts
+// (`npm run ml:backfill`) — but it is ALSO invoked inline, in-process, from
+// postSyncEnrich.ts's automatic post-sync pass, which runs on the same
+// Next.js server that must stay responsive to live requests. That's the
+// second half of the 502-after-5,680ms incident (see syncJob.ts's file
+// header for the first half): each embedText() call runs ONNX inference,
+// which is CPU-bound work on this process's single event loop — a tight
+// loop of ~100 of them back to back monopolizes it for seconds, during
+// which nothing else (including flushing an unrelated response) gets a
+// turn.
+//
+// YIELD BETWEEN ITEMS, NOT A CHILD PROCESS: measured with the real
+// quantized MiniLM model (q8, native onnxruntime-node backend) on ordinary
+// dev hardware — see the fix's PR/report for the numbers — a single
+// embedText() call is single-digit milliseconds, nowhere near the
+// "hundreds of ms" threshold that would justify forking a worker process
+// (more moving parts: a second DB connection, IPC, matching tsx's
+// resolution in both dev and the production image). At that latency,
+// yielding to the event loop between each item is enough: `setImmediate`
+// runs after Node has drained pending I/O callbacks, so any queued request
+// (including one whose response is still being flushed) gets serviced
+// between embeddings instead of waiting behind the whole batch. Total wall
+// time for a pass is unchanged — this bounds how long any single stretch of
+// unresponsiveness can be, not the total CPU spent.
 // ---------------------------------------------------------------------------
 
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
@@ -31,6 +53,17 @@ const DEFAULT_DELAY_MS = 500;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Hands control back to the event loop after one embedding, so any request
+ *  queued behind this CPU-bound pass (a live HTTP request being handled or
+ *  flushed, another job's I/O) gets serviced before the next inference
+ *  starts. `setImmediate` (rather than `setTimeout(0)`) runs right after
+ *  Node's I/O poll phase, which is exactly the "let pending I/O drain"
+ *  point this needs — see file header for the measurement behind choosing
+ *  this over a child process. */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 export interface BackfillOptions {
@@ -102,6 +135,9 @@ export async function backfillEmbeddings(options: BackfillOptions = {}): Promise
         // eslint-disable-next-line no-console -- this is a CLI batch job, not request-path code
         console.error(`[ml/embedBackfill] failed to embed ${row.mediaType}:${row.tmdbId}`, err);
       }
+      // See yieldToEventLoop's doc comment: gives any live request queued
+      // behind this CPU-bound pass a turn before the next inference starts.
+      await yieldToEventLoop();
     }
 
     options.onProgress?.(processed, failed);
