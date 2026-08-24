@@ -28,6 +28,17 @@ jobs:
           node-version: "22"
           cache: "npm"
 
+      # This repo's lockfile contains a nested optionalDependency that shares a
+      # name with a top-level *aliased* package (better-sqlite3 is an alias for
+      # better-sqlite3-multiple-ciphers). npm 10 — the version bundled with
+      # Node 22 — misreads that and fails `npm ci` outright, even though the
+      # lockfile is valid and npm 11+ installs it cleanly. The Dockerfile pins
+      # npm@11 before its own `npm ci` for exactly this reason; these two must
+      # stay in step, or CI and the image build disagree about whether the
+      # project installs.
+      - name: Upgrade npm (lockfile requires npm 11+)
+        run: npm install -g npm@11
+
       - name: Install dependencies
         run: npm ci
 
