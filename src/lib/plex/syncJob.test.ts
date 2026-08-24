@@ -6,11 +6,16 @@
 // (this codebase doesn't unit-test route.ts handlers — see the sibling
 // *.test.ts files next to every other route's underlying lib module).
 //
-// syncLibraries/syncWatchlist/getLinkedServerContext/triggerPostSyncEnrichment
+// syncLibraries/syncWatchlist/getLinkedServerContexts/triggerPostSyncEnrichment
 // are mocked out (same style as postSyncEnrich.test.ts) so no real Plex/
 // TMDB/ML work happens; @/db/client points at a throwaway migrated SQLite
 // file (librarySync.test.ts's pattern) so sync_state writes are exercised
 // for real.
+//
+// getLinkedServerContexts (plural — see link.ts) is mocked to resolve one
+// context by default, which exercises the exact same single-server path the
+// pre-picker tests here covered; the "syncs every selected server" tests
+// further down mock it with 2+ contexts instead.
 // ---------------------------------------------------------------------------
 import fs from "node:fs";
 import os from "node:os";
@@ -24,7 +29,7 @@ import { applySqlcipherKey } from "@/db/sqlcipherKey";
 import * as schema from "@/db/schema";
 import { env } from "@/lib/env";
 import { PlexRequestError } from "@/lib/plex/http";
-import { PlexNotLinkedError, PlexUnreachableError } from "@/lib/plex/link";
+import { PlexNotLinkedError, PlexServerSelectionRequiredError, PlexUnreachableError } from "@/lib/plex/link";
 import { VaultKeyUnavailableError } from "@/lib/plex/token";
 
 let dir: string;
@@ -42,7 +47,7 @@ vi.mock("@/db/client", () => ({
 
 const syncLibraries = vi.fn();
 const syncWatchlist = vi.fn();
-const getLinkedServerContext = vi.fn();
+const getLinkedServerContexts = vi.fn();
 const triggerPostSyncEnrichment = vi.fn();
 
 vi.mock("@/lib/plex/librarySync", () => ({
@@ -55,7 +60,7 @@ vi.mock("@/lib/plex/link", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/plex/link")>();
   return {
     ...actual,
-    getLinkedServerContext: (...args: unknown[]) => getLinkedServerContext(...args),
+    getLinkedServerContexts: (...args: unknown[]) => getLinkedServerContexts(...args),
   };
 });
 vi.mock("@/lib/plex/postSyncEnrich", () => ({
@@ -78,7 +83,7 @@ afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** Flushes pending microtasks (e.g. a mocked-resolved getLinkedServerContext
+/** Flushes pending microtasks (e.g. a mocked-resolved getLinkedServerContexts
  *  continuing on to call syncLibraries) without waiting for the whole job to
  *  settle — setImmediate runs after the microtask queue drains, so this is
  *  enough to observe "the next mocked call has happened" without racing it. */
@@ -107,16 +112,31 @@ const okLibraryResult = {
 };
 const okWatchlistResult = { synced: 3, unresolved: 1 };
 
+/** Default single-selected-server shape getLinkedServerContexts resolves —
+ *  matches what the pre-picker single-context mock used to return, just
+ *  wrapped in the new { token, clientIdentifier, contexts, unreachable }
+ *  envelope (see link.ts's LinkedServerContexts). */
+function singleContextResult(overrides: Partial<{ machineIdentifier: string; connectionUri: string }> = {}) {
+  return {
+    token: "token",
+    clientIdentifier: "client-1",
+    contexts: [
+      {
+        linkId: "link-1",
+        machineIdentifier: overrides.machineIdentifier ?? "machine-1",
+        token: "token",
+        clientIdentifier: "client-1",
+        connectionUri: overrides.connectionUri ?? "http://192.168.1.50:32400",
+      },
+    ],
+    unreachable: [],
+  };
+}
+
 beforeEach(() => {
   syncLibraries.mockReset().mockResolvedValue(okLibraryResult);
   syncWatchlist.mockReset().mockResolvedValue(okWatchlistResult);
-  getLinkedServerContext.mockReset().mockResolvedValue({
-    linkId: "link-1",
-    machineIdentifier: "machine-1",
-    token: "token",
-    clientIdentifier: "client-1",
-    connectionUri: "http://192.168.1.50:32400",
-  });
+  getLinkedServerContexts.mockReset().mockResolvedValue(singleContextResult());
   triggerPostSyncEnrichment.mockReset().mockResolvedValue(undefined);
 });
 
@@ -147,7 +167,7 @@ describe("startOrGetSyncJob", () => {
     expect(job.status).toBe("running");
     expect(job.phase).toBe("scanning-library");
 
-    // Let the mocked getLinkedServerContext's promise resolve and the
+    // Let the mocked getLinkedServerContexts's promise resolve and the
     // background job reach the (still-pending) syncLibraries() call.
     await tick();
     expect(syncLibraries).toHaveBeenCalledTimes(1);
@@ -199,6 +219,7 @@ describe("startOrGetSyncJob", () => {
     expect(job.scanVariant).toBe("includeGuids");
     expect(job.watchlistSynced).toBe(3);
     expect(job.watchlistUnresolved).toBe(1);
+    expect(job.serversUnreachable).toBe(0);
     expect(job.error).toBeNull();
     expect(triggerPostSyncEnrichment).toHaveBeenCalledTimes(1);
 
@@ -287,29 +308,107 @@ describe("startOrGetSyncJob", () => {
     const { startOrGetSyncJob, getSyncJob, __waitForSyncJobForTest } = await import("./syncJob");
     const user = makeUser();
 
-    getLinkedServerContext
+    getLinkedServerContexts
       .mockRejectedValueOnce(new PlexRequestError("stale connection", 502, "http://old-uri/"))
-      .mockResolvedValueOnce({
-        linkId: "link-1",
-        machineIdentifier: "machine-1",
-        token: "token",
-        clientIdentifier: "client-1",
-        connectionUri: "http://192.168.1.99:32400",
-      });
+      .mockResolvedValueOnce(singleContextResult({ connectionUri: "http://192.168.1.99:32400" }));
 
     startOrGetSyncJob(user);
     await __waitForSyncJobForTest(user.id);
 
-    expect(getLinkedServerContext).toHaveBeenCalledTimes(2);
-    expect(getLinkedServerContext).toHaveBeenNthCalledWith(1, user, { forceReprobe: false });
-    expect(getLinkedServerContext).toHaveBeenNthCalledWith(2, user, { forceReprobe: true });
+    expect(getLinkedServerContexts).toHaveBeenCalledTimes(2);
+    expect(getLinkedServerContexts).toHaveBeenNthCalledWith(1, user, { forceReprobe: false });
+    expect(getLinkedServerContexts).toHaveBeenNthCalledWith(2, user, { forceReprobe: true });
     expect(getSyncJob(user.id).status).toBe("completed");
+  });
+
+  it("syncs every selected server and sums their library results (genuine multi-server sync, not selection-only)", async () => {
+    const { startOrGetSyncJob, getSyncJob, __waitForSyncJobForTest } = await import("./syncJob");
+    const user = makeUser();
+
+    getLinkedServerContexts.mockResolvedValue({
+      token: "token",
+      clientIdentifier: "client-1",
+      contexts: [
+        { linkId: "link-1", machineIdentifier: "machine-1", token: "token", clientIdentifier: "client-1", connectionUri: "http://192.168.1.50:32400" },
+        { linkId: "link-1", machineIdentifier: "machine-2", token: "token", clientIdentifier: "client-1", connectionUri: "http://192.168.1.51:32400" },
+      ],
+      unreachable: [],
+    });
+    syncLibraries
+      .mockResolvedValueOnce({ moviesSynced: 5, showsSynced: 2, libraryItemsSynced: 40, includeGuidsWorked: true, scanVariant: "includeGuids" as const })
+      .mockResolvedValueOnce({ moviesSynced: 3, showsSynced: 1, libraryItemsSynced: 10, includeGuidsWorked: null, scanVariant: "legacy" as const });
+
+    startOrGetSyncJob(user);
+    await __waitForSyncJobForTest(user.id);
+
+    expect(syncLibraries).toHaveBeenCalledTimes(2);
+    expect(syncLibraries).toHaveBeenNthCalledWith(1, expect.objectContaining({ machineIdentifier: "machine-1", connectionUri: "http://192.168.1.50:32400" }));
+    expect(syncLibraries).toHaveBeenNthCalledWith(2, expect.objectContaining({ machineIdentifier: "machine-2", connectionUri: "http://192.168.1.51:32400" }));
+    // syncWatchlist is account-level, not per-server — called once regardless
+    // of how many servers were scanned.
+    expect(syncWatchlist).toHaveBeenCalledTimes(1);
+
+    const job = getSyncJob(user.id);
+    expect(job.status).toBe("completed");
+    // Sums across both servers' results.
+    expect(job.moviesSynced).toBe(8);
+    expect(job.showsSynced).toBe(3);
+    expect(job.libraryItemsSynced).toBe(50);
+    // First server's characteristics win when they differ.
+    expect(job.includeGuidsWorked).toBe(true);
+    expect(job.scanVariant).toBe("includeGuids");
+    expect(job.serversUnreachable).toBe(0);
+  });
+
+  it("completes with the reachable servers and reports the rest via serversUnreachable when some selected servers can't connect", async () => {
+    const { startOrGetSyncJob, getSyncJob, __waitForSyncJobForTest } = await import("./syncJob");
+    const user = makeUser();
+
+    getLinkedServerContexts.mockResolvedValue({
+      token: "token",
+      clientIdentifier: "client-1",
+      contexts: [
+        { linkId: "link-1", machineIdentifier: "machine-1", token: "token", clientIdentifier: "client-1", connectionUri: "http://192.168.1.50:32400" },
+      ],
+      // machine-2 is selected but didn't resolve a connection this attempt.
+      unreachable: ["machine-2"],
+    });
+
+    startOrGetSyncJob(user);
+    await __waitForSyncJobForTest(user.id);
+
+    const job = getSyncJob(user.id);
+    expect(job.status).toBe("completed");
+    expect(syncLibraries).toHaveBeenCalledTimes(1); // only the reachable server was scanned
+    expect(job.serversUnreachable).toBe(1);
+  });
+
+  it("fails with a 'choose one in Settings' message, without recording sync_state, when multiple servers are available but none is selected", async () => {
+    const { startOrGetSyncJob, getSyncJob, __waitForSyncJobForTest } = await import("./syncJob");
+    const user = makeUser();
+    getLinkedServerContexts.mockRejectedValue(new PlexServerSelectionRequiredError());
+
+    startOrGetSyncJob(user);
+    await __waitForSyncJobForTest(user.id);
+
+    const job = getSyncJob(user.id);
+    expect(job.status).toBe("failed");
+    expect(job.error).toBe(
+      "More than one Plex server is available for this account — choose one in Settings.",
+    );
+
+    const stateRow = testDb
+      .select()
+      .from(schema.syncState)
+      .where(and(eq(schema.syncState.userId, user.id), eq(schema.syncState.source, "plex")))
+      .get();
+    expect(stateRow).toBeUndefined();
   });
 
   it("fails with 'Plex is not linked.' and does NOT record sync_state for PlexNotLinkedError", async () => {
     const { startOrGetSyncJob, getSyncJob, __waitForSyncJobForTest } = await import("./syncJob");
     const user = makeUser();
-    getLinkedServerContext.mockRejectedValue(new PlexNotLinkedError());
+    getLinkedServerContexts.mockRejectedValue(new PlexNotLinkedError());
 
     startOrGetSyncJob(user);
     await __waitForSyncJobForTest(user.id);
@@ -329,7 +428,7 @@ describe("startOrGetSyncJob", () => {
   it("fails with a session-expired message for VaultKeyUnavailableError, without recording sync_state", async () => {
     const { startOrGetSyncJob, getSyncJob, __waitForSyncJobForTest } = await import("./syncJob");
     const user = makeUser();
-    getLinkedServerContext.mockRejectedValue(new VaultKeyUnavailableError());
+    getLinkedServerContexts.mockRejectedValue(new VaultKeyUnavailableError());
 
     startOrGetSyncJob(user);
     await __waitForSyncJobForTest(user.id);
@@ -346,7 +445,7 @@ describe("startOrGetSyncJob", () => {
   it("fails and records sync_state for PlexUnreachableError", async () => {
     const { startOrGetSyncJob, getSyncJob, __waitForSyncJobForTest } = await import("./syncJob");
     const user = makeUser();
-    getLinkedServerContext.mockRejectedValue(new PlexUnreachableError());
+    getLinkedServerContexts.mockRejectedValue(new PlexUnreachableError());
 
     startOrGetSyncJob(user);
     await __waitForSyncJobForTest(user.id);
@@ -379,6 +478,7 @@ describe("getSyncJob", () => {
       includeGuidsWorked: null,
       watchlistSynced: null,
       watchlistUnresolved: null,
+      serversUnreachable: null,
       error: null,
     });
   });

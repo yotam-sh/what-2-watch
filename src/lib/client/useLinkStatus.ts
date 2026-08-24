@@ -10,7 +10,12 @@ export type PlexLinkStatusResponse =
   | { linked: false }
   | {
       linked: true;
-      machineIdentifier: string | null;
+      // How many servers are currently selected (src/db/schema.ts's
+      // plex_selected_servers) — 0 until the first sync/connection attempt
+      // lazily auto-selects a lone server, or the user picks one/more in
+      // Settings. The full per-server picker data (name, owned/shared,
+      // reachable) lives at GET /api/plex/servers, not here.
+      selectedServerCount: number;
       hasConnection: boolean;
       connectionCheckedAt: string | null;
       keyScope: "user" | "server";

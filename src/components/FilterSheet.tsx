@@ -12,7 +12,8 @@
 // whatever was changed since the sheet opened. This is the coherent
 // pairing for a sheet that *has* an Apply button: if edits applied live,
 // Apply would have nothing left to do.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import {
   filtersReducer,
   hasActiveFilters,
@@ -66,6 +67,21 @@ export function FilterSheet({
 }) {
   const [staged, setStaged] = useState<DecideFilters>(committedFilters);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Portal target only exists in the browser — `document` is undefined
+  // during SSR/RSC render. Starting `mounted` false makes the very first
+  // client render match the server's (both render nothing here), so this
+  // never trips a hydration mismatch; the effect below flips it true right
+  // after mount and the sheet mounts into document.body from then on. See
+  // the return statement for why this must portal at all.
+  // useSyncExternalStore is React's sanctioned way to read a client-only
+  // value: it returns the server snapshot (false) during SSR and the client
+  // snapshot (true) once hydrated, with no setState-in-effect and no
+  // cascading render. The store never changes, so subscribe is a no-op.
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   // Two independent "was it open last render" refs, each owned by its own
   // effect below — sharing one ref between effects would make whichever
   // effect runs second observe a value the first has already overwritten.
@@ -142,7 +158,20 @@ export function FilterSheet({
   const dispatch = (action: FilterAction) => setStaged((prev) => filtersReducer(prev, action));
   const stagedHasActive = hasActiveFilters(staged);
 
-  return (
+  // Portaled to document.body rather than rendered in place: this sheet is
+  // `fixed inset-0`, but DecideScreen renders it inside a <main
+  // className="... animate-content-in"> — and animate-content-in applies a
+  // CSS transform. Per spec, a transformed ancestor becomes the containing
+  // block for a `position: fixed` descendant, so without the portal this
+  // sheet would position itself against <main> (which grows taller than
+  // the viewport as content is added) instead of the viewport itself,
+  // making it scroll inline instead of overlaying. Escaping to document.body
+  // sidesteps that permanently, regardless of what transforms ever end up
+  // between here and the root. (Refs, event handlers, and context all still
+  // work normally through a portal — only the DOM location changes.)
+  if (!mounted) return null;
+
+  return createPortal(
     <div className={`fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`} inert={!open}>
       {/* Backdrop */}
       <div
@@ -234,6 +263,7 @@ export function FilterSheet({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

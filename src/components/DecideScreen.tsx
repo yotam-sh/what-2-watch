@@ -210,7 +210,7 @@ export function DecideScreen({ username }: { username: string }) {
       });
 
   return (
-    <main className="flex min-h-screen flex-col animate-content-in">
+    <main className="flex min-h-screen-dvh flex-col animate-content-in">
       <header className="px-4 pt-6">
         <p className="text-sm text-zinc-500">Hey {username}, what to watch tonight?</p>
       </header>

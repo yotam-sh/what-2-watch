@@ -73,7 +73,7 @@ export default async function RewatchPage() {
   const list = hasSyncedAnything ? await loadRewatchList(user.id) : [];
 
   return (
-    <main className="min-h-screen pb-6 animate-content-in">
+    <main className="min-h-screen-dvh pb-6 animate-content-in">
       <header className="px-4 pt-6 pb-2">
         <h1 className="text-xl font-semibold">Rewatch</h1>
         <p className="text-sm text-zinc-500">Sorted by how long it&apos;s been since you last watched.</p>

@@ -31,6 +31,10 @@ export interface PlexSyncJob {
   includeGuidsWorked: boolean | null;
   watchlistSynced: number | null;
   watchlistUnresolved: number | null;
+  /** Count of selected servers skipped this run because they couldn't be
+   *  reached (still selected — just unreachable right now). Mirrors
+   *  SyncJobState.serversUnreachable in src/lib/plex/syncJob.ts. */
+  serversUnreachable: number | null;
   error: string | null;
 }
 
@@ -46,6 +50,7 @@ export const IDLE_SYNC_JOB: PlexSyncJob = {
   includeGuidsWorked: null,
   watchlistSynced: null,
   watchlistUnresolved: null,
+  serversUnreachable: null,
   error: null,
 };
 

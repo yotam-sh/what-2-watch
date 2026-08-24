@@ -10,7 +10,7 @@ const SKELETON_ROW_COUNT = 6;
 
 export default function ContinueLoading() {
   return (
-    <main className="min-h-screen pb-6">
+    <main className="min-h-screen-dvh pb-6">
       <header className="px-4 pt-6 pb-2">
         <h1 className="text-xl font-semibold">Continue</h1>
         <p className="text-sm text-zinc-500">Pick up where you left off.</p>

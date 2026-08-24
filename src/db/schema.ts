@@ -108,13 +108,78 @@ export const plexLinks = sqliteTable(
     // schema change to reuse it. src/lib/plex/token.ts still branches on
     // this column for exactly that reason.
     keyScope: text("key_scope").notNull().default("server"),
-    machineIdentifier: text("machine_identifier"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    check("plex_links_key_scope_check", sql`${table.keyScope} IN ('user', 'server')`),
+  ],
+);
+
+// ---- plex_selected_servers ----
+//
+// Which of the account's discovered Plex servers (owned or shared —
+// fetchPlexServers()/getPlexServers() in src/lib/plex/resources.ts) this user
+// has explicitly chosen to draw media from. Added because the previous
+// behavior — src/lib/plex/link.ts silently doing
+// `servers.find((s) => s.owned) ?? servers[0]` — meant a user who owned no
+// server got a *stranger's shared library* scanned with no one ever having
+// chosen that. "Servers" is deliberately plural in the product ask, so this
+// has to represent 0..N selections per user, not one.
+//
+// A SEPARATE TABLE rather than a column on plex_links, for three reasons:
+//   1. plex_links is 1 row per user (one Plex *account* link/token — see its
+//      own header). Selection is naturally 0..N rows per user. Packing an
+//      array into a text/JSON column on plex_links would mean parsing JSON
+//      on every "is server X selected" check and no unique constraint to
+//      stop the same server being selected twice.
+//   2. plex_items (below) is already keyed by (user_id, machine_identifier,
+//      rating_key) — per-server rows are already this data's natural shape.
+//      A normalized selection table matches that instead of fighting it.
+//   3. Each selected server needs its OWN connection cache. plex_links used
+//      to hold ONE cached_connection_uri/connection_checked_at pair for "the"
+//      server; with multiple servers selected, one server's relay can be up
+//      while another's LAN is asleep, and conflating them into a single
+//      cached URI would be actively wrong the moment a second server is
+//      selected. So those two cache columns move here, per selection, and
+//      are dropped from plex_links (see migration 0004 for how existing
+//      plex_links rows carry their machine_identifier/cache forward into
+//      this table rather than silently losing it).
+//
+// Presence of a row IS the selection — there's no separate boolean, and
+// deselecting a server means deleting its row here. Deselecting deliberately
+// does NOT delete that machine_identifier's plex_items: those rows are watch
+// history the user actually accumulated, and losing them on a toggle would
+// be a surprising, hard-to-reverse side effect for what's meant to be a
+// lightweight "stop pulling from this one" action — this mirrors how
+// unlinking Plex entirely (see account.ts) already keeps watch_events/
+// plex_items rather than purging them. Re-selecting the same server later
+// picks the sync back up over the same rows via plex_items' existing
+// (user_id, machine_identifier, rating_key) unique index — nothing needs
+// re-derived.
+export const plexSelectedServers = sqliteTable(
+  "plex_selected_servers",
+  {
+    id: uuidPk(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // == PlexResource.clientIdentifier (src/lib/plex/resources.ts) — the same
+    // value stored in plex_items.machine_identifier and (formerly)
+    // plex_links.machine_identifier.
+    machineIdentifier: text("machine_identifier").notNull(),
+    // Per-selection connection cache — see file-header point 3. Same
+    // meaning/lifecycle as plex_links used to have: reused while fresh
+    // (CONNECTION_CACHE_TTL_MS in resources.ts), re-raced on demand or on
+    // failure (constraint 12, unchanged).
     cachedConnectionUri: text("cached_connection_uri"),
     connectionCheckedAt: integer("connection_checked_at", { mode: "timestamp" }),
     createdAt: createdAt(),
   },
   (table) => [
-    check("plex_links_key_scope_check", sql`${table.keyScope} IN ('user', 'server')`),
+    uniqueIndex("plex_selected_servers_user_machine_unique").on(
+      table.userId,
+      table.machineIdentifier,
+    ),
   ],
 );
 

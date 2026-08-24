@@ -19,7 +19,7 @@ export function AppChrome({ hasUser, children }: { hasUser: boolean; children: R
 
   return (
     <>
-      <div className={showNav ? "pb-16" : undefined}>{children}</div>
+      <div className={showNav ? "pb-nav" : undefined}>{children}</div>
       {showNav && <BottomNav />}
     </>
   );

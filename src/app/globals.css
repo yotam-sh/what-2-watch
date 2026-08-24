@@ -38,6 +38,35 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Full-height screens use this instead of Tailwind's min-h-screen
+   (min-height: 100vh) alone. 100vh is sized to the *largest* possible
+   mobile viewport — i.e. with the browser's address bar/toolbar chrome
+   hidden — so an element pinned to it can be taller than what's actually
+   visible whenever that chrome is showing, cutting off the bottom of the
+   page and forcing a scroll that shouldn't be needed. 100dvh (dynamic
+   viewport height) tracks the chrome as it shows/hides instead. The two
+   declarations rely on CSS's "invalid values are ignored" behavior for the
+   fallback: browsers without dvh support treat `min-height: 100dvh` as
+   invalid at parse time and drop the whole declaration, leaving the
+   min-height: 100vh line above it in effect — so order here matters, vh
+   first, dvh second. */
+.min-h-screen-dvh {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Bottom clearance reserved for the fixed bottom nav (BottomNav.tsx), used
+   by AppChrome's content wrapper. A flat padding value alone (the previous
+   pb-16) doesn't account for env(safe-area-inset-bottom) — which the nav
+   adds to *its own* height via .safe-area-bottom above — so on notched/
+   home-indicator devices the nav can render taller than the space reserved
+   for it, overlapping the last bit of page content. Reserve the same base
+   height explicitly and add the safe-area inset on top in one declaration
+   so it's never short. */
+.pb-nav {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+}
+
 /* Thumb-reachable minimum per Apple/Google's own accessibility guidance —
    applied to every tappable control in the bottom nav and swipe actions. */
 .tap-target {

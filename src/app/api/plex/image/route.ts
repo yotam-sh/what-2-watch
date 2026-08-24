@@ -13,7 +13,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOptionalUser } from "@/lib/auth/guards";
 import { PlexRequestError } from "@/lib/plex/http";
-import { getLinkedServerContext, PlexNotLinkedError, PlexUnreachableError } from "@/lib/plex/link";
+import {
+  getLinkedServerContext,
+  PlexNotLinkedError,
+  PlexServerSelectionRequiredError,
+  PlexUnreachableError,
+} from "@/lib/plex/link";
 import { VaultKeyUnavailableError } from "@/lib/plex/token";
 
 function isSafeRelativePath(path: string): boolean {
@@ -74,6 +79,9 @@ export async function GET(request: NextRequest) {
     }
     if (err instanceof VaultKeyUnavailableError) {
       return NextResponse.json({ error: "Session expired." }, { status: 401 });
+    }
+    if (err instanceof PlexServerSelectionRequiredError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     if (err instanceof PlexUnreachableError || err instanceof PlexRequestError) {
       return NextResponse.json({ error: "Could not reach Plex server." }, { status: 502 });

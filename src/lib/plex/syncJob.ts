@@ -36,7 +36,12 @@ import { syncState } from "@/db/schema";
 import type { AuthenticatedUser } from "@/lib/auth/guards";
 import { syncWatchlist } from "@/lib/plex/discoverSync";
 import { PlexRequestError } from "@/lib/plex/http";
-import { getLinkedServerContext, PlexNotLinkedError, PlexUnreachableError } from "@/lib/plex/link";
+import {
+  getLinkedServerContexts,
+  PlexNotLinkedError,
+  PlexServerSelectionRequiredError,
+  PlexUnreachableError,
+} from "@/lib/plex/link";
 import type { ScanVariantName } from "@/lib/plex/library";
 import { syncLibraries } from "@/lib/plex/librarySync";
 import { triggerPostSyncEnrichment } from "@/lib/plex/postSyncEnrich";
@@ -65,6 +70,11 @@ export interface SyncJobState {
   includeGuidsWorked: boolean | null;
   watchlistSynced: number | null;
   watchlistUnresolved: number | null;
+  /** Count of selected servers that were skipped this run because their
+   *  connection couldn't be resolved (still selected — just unreachable
+   *  right now). Null while idle/unknown, 0 once a completed sync reached
+   *  every selected server. See getLinkedServerContexts in link.ts. */
+  serversUnreachable: number | null;
   error: string | null;
 }
 
@@ -81,6 +91,7 @@ function idleState(): SyncJobState {
     includeGuidsWorked: null,
     watchlistSynced: null,
     watchlistUnresolved: null,
+    serversUnreachable: null,
     error: null,
   };
 }
@@ -131,21 +142,62 @@ function recordSyncState(userId: string, lastError: string | null): void {
     .run();
 }
 
+type LibraryResult = Awaited<ReturnType<typeof syncLibraries>>;
+
+/** Sums per-server library-scan results across every selected server that
+ *  resolved a connection this run. moviesSynced/showsSynced/
+ *  libraryItemsSynced are plain counts, so summing is correct; scanVariant/
+ *  includeGuidsWorked are per-server characteristics of *which PMS build*
+ *  answered, so the first non-null one is kept (mirrors syncLibraries' own
+ *  "first section sets it" behavior, just extended across servers). */
+function mergeLibraryResults(results: LibraryResult[]): LibraryResult {
+  return results.reduce<LibraryResult>(
+    (acc, r) => ({
+      moviesSynced: acc.moviesSynced + r.moviesSynced,
+      showsSynced: acc.showsSynced + r.showsSynced,
+      libraryItemsSynced: acc.libraryItemsSynced + r.libraryItemsSynced,
+      includeGuidsWorked: acc.includeGuidsWorked ?? r.includeGuidsWorked,
+      scanVariant: acc.scanVariant ?? r.scanVariant,
+    }),
+    { moviesSynced: 0, showsSynced: 0, libraryItemsSynced: 0, includeGuidsWorked: null, scanVariant: null },
+  );
+}
+
 async function runOnce(user: AuthenticatedUser, forceReprobe: boolean, job: SyncJobState) {
-  const ctx = await getLinkedServerContext(user, { forceReprobe });
-  const libraryResult = await syncLibraries({
-    userId: user.id,
-    machineIdentifier: ctx.machineIdentifier,
-    connectionUri: ctx.connectionUri,
-    token: ctx.token,
-    clientIdentifier: ctx.clientIdentifier,
+  const { token, clientIdentifier, contexts, unreachable } = await getLinkedServerContexts(user, {
+    forceReprobe,
   });
-  // The library scan is the long pole (~1,900 items); the watchlist is
-  // comparatively small. Reported as a distinct phase now that the two run
-  // sequentially rather than racing library.ts's own concurrency was for.
+
+  // One full library scan per selected server, run sequentially rather than
+  // concurrently: this app targets a NAS running the PMS itself (see this
+  // file's header — the 502-after-5,680ms incident was on exactly that kind
+  // of box), and hitting N of a user's servers with N simultaneous
+  // ~1,900-item scans is a worse load profile than the current "servers are
+  // usually 1" case this codebase has been tuned against. Multi-server
+  // accounts pay for it in wall-clock time instead.
+  const libraryResults: LibraryResult[] = [];
+  for (const ctx of contexts) {
+    libraryResults.push(
+      await syncLibraries({
+        userId: user.id,
+        machineIdentifier: ctx.machineIdentifier,
+        connectionUri: ctx.connectionUri,
+        token: ctx.token,
+        clientIdentifier: ctx.clientIdentifier,
+      }),
+    );
+  }
+  const libraryResult = mergeLibraryResults(libraryResults);
+
+  // The library scan(s) are the long pole (~1,900 items each); the
+  // watchlist is comparatively small and, unlike the library, is an
+  // account-level Plex Discover list — not per-server — so it's fetched
+  // once regardless of how many servers were just scanned. Reported as a
+  // distinct phase now that the two run sequentially rather than racing
+  // library.ts's own concurrency was for.
   job.phase = "syncing-watchlist";
-  const watchlistResult = await syncWatchlist({ userId: user.id, token: ctx.token, clientIdentifier: ctx.clientIdentifier });
-  return { libraryResult, watchlistResult };
+  const watchlistResult = await syncWatchlist({ userId: user.id, token, clientIdentifier });
+  return { libraryResult, watchlistResult, serversUnreachable: unreachable.length };
 }
 
 /** Runs the actual sync end to end and mutates the job object in place as
@@ -182,6 +234,7 @@ async function executeSyncJob(user: AuthenticatedUser, job: SyncJobState): Promi
     job.scanVariant = result.libraryResult.scanVariant;
     job.watchlistSynced = result.watchlistResult.synced;
     job.watchlistUnresolved = result.watchlistResult.unresolved;
+    job.serversUnreachable = result.serversUnreachable;
 
     // Fire-and-forget, exactly as before this fix: kicks off a bounded
     // background enrichment pass so the library self-heals
@@ -204,6 +257,12 @@ async function executeSyncJob(user: AuthenticatedUser, job: SyncJobState): Promi
       // which never called recordSyncState for this error either.
     } else if (err instanceof VaultKeyUnavailableError) {
       message = "Your session expired. Please log in again to sync.";
+    } else if (err instanceof PlexServerSelectionRequiredError) {
+      message = err.message;
+      // Not recorded to sync_state, same rationale as PlexNotLinkedError
+      // above: this isn't a failed sync attempt against a known server,
+      // it's "there's nothing selected to sync yet" — a state the user
+      // resolves in Settings, not by retrying.
     } else if (err instanceof PlexUnreachableError) {
       message = err.message;
       recordSyncState(user.id, message);

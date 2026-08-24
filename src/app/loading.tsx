@@ -17,7 +17,7 @@ import { SkeletonBar } from "@/components/SkeletonBar";
 
 export default function DecideLoading() {
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="flex min-h-screen-dvh flex-col">
       <header className="px-4 pt-6">
         <SkeletonBar className="h-4 w-48" />
       </header>

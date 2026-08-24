@@ -32,7 +32,7 @@ export default function SettingsLoading() {
         <SkeletonBar className="h-9 w-24 rounded-md" />
       </div>
 
-      <main className="min-h-screen pb-6">
+      <main className="min-h-screen-dvh pb-6">
         <header className="px-4 pt-6 pb-2">
           <h1 className="text-xl font-semibold">Settings</h1>
           <SkeletonBar className="mt-1.5 h-4 w-40" />
