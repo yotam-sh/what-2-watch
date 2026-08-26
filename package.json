@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env.local src/db/migrate.ts",
     "ml:backfill": "tsx --env-file-if-exists=.env.local src/lib/ml/runBackfill.ts",
-    "tmdb:backfill": "tsx --env-file-if-exists=.env.local src/lib/tmdb/runBackfill.ts"
+    "tmdb:backfill": "tsx --env-file-if-exists=.env.local src/lib/tmdb/runBackfill.ts",
+    "stats": "tsx --env-file-if-exists=.env.local src/lib/stats/runStats.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

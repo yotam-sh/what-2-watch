@@ -36,8 +36,6 @@ import {
   contentScore,
   deriveSeed,
   genreAffinityScore,
-  rankBinge,
-  type BingeCandidate,
   type FilterableCandidate,
   type ScoreFilters,
   type ScoredKey,
@@ -61,7 +59,7 @@ const CF_BLEND_WEIGHT = 0.4;
  *  similarity entirely. */
 const LTR_BLEND_WEIGHT = 0.6;
 
-export type RecommendMode = "rewatch" | "watchlist" | "discover" | "continue" | "binge";
+export type RecommendMode = "rewatch" | "watchlist" | "discover" | "continue";
 
 export interface RecommendOptions {
   mode: RecommendMode;
@@ -222,7 +220,7 @@ function buildDiscoverPool(
 }
 
 function buildCandidatePool(
-  mode: Exclude<RecommendMode, "binge">,
+  mode: RecommendMode,
   userId: string,
   allTitles: TitleRow[],
   plexAgg: Map<string, PlexItemAgg>,
@@ -254,7 +252,7 @@ function buildCandidatePool(
   return allTitles.filter((t) => watchlistKeys.has(titleKey({ tmdbId: t.tmdbId, mediaType: t.mediaType as MediaType })));
 }
 
-function modeWhy(mode: Exclude<RecommendMode, "binge">): string | null {
+function modeWhy(mode: RecommendMode): string | null {
   switch (mode) {
     case "watchlist":
       return "On your watchlist";
@@ -276,10 +274,6 @@ export function recommend(userId: string, options: RecommendOptions): Recommende
   const allTitles = loadAllTitles();
   const userPlexItems = db.select().from(plexItems).where(eq(plexItems.userId, userId)).all();
   const plexAgg = aggregatePlexItemsByTitle(userPlexItems);
-
-  if (options.mode === "binge") {
-    return recommendBinge(allTitles, plexAgg, filters, seed, limit);
-  }
 
   const watchHistory = getReconciledWatchHistory(userId);
   const watchedKeys = new Set(watchHistory.map(titleKey));
@@ -373,56 +367,3 @@ export function recommend(userId: string, options: RecommendOptions): Recommende
   }));
 }
 
-function recommendBinge(
-  allTitles: TitleRow[],
-  plexAgg: Map<string, PlexItemAgg>,
-  filters: ScoreFilters,
-  seed: number,
-  limit: number,
-): RecommendedCandidate[] {
-  const tvTitles = allTitles.filter((t) => t.mediaType === "tv");
-  const filterable: FilterableCandidate[] = tvTitles.map((t) => ({
-    tmdbId: t.tmdbId,
-    mediaType: "tv",
-    runtime: t.runtime,
-    year: t.year,
-    genres: parseJsonStringArray(t.genres),
-  }));
-  const filteredKeys = new Set(applyHardFilters(filterable, filters).map(titleKey));
-
-  const candidates: BingeCandidate[] = tvTitles
-    .filter((t) => filteredKeys.has(titleKey({ tmdbId: t.tmdbId, mediaType: "tv" })))
-    .map((t) => {
-      const agg = plexAgg.get(titleKey({ tmdbId: t.tmdbId, mediaType: "tv" }));
-      return {
-        tmdbId: t.tmdbId,
-        mediaType: "tv" as const,
-        runtime: t.runtime,
-        leafCount: agg?.leafCount ?? null,
-        viewedLeafCount: agg?.viewedLeafCount ?? null,
-      };
-    });
-
-  const ranked = rankBinge(candidates);
-  const jittered = applySeededJitter(
-    ranked.map((r) => ({ ...r, key: titleKey(r) })),
-    seed,
-  );
-
-  const titlesByKey = new Map(tvTitles.map((t) => [titleKey({ tmdbId: t.tmdbId, mediaType: "tv" }), t]));
-
-  return jittered.slice(0, limit).map((r) => {
-    const row = titlesByKey.get(r.key);
-    const hours = Math.round((r.remainingRuntimeMinutes / 60) * 10) / 10;
-    return {
-      tmdbId: r.tmdbId,
-      mediaType: "tv" as const,
-      title: row?.title ?? `Unknown (${r.tmdbId})`,
-      year: row?.year ?? null,
-      runtime: row?.runtime ?? null,
-      posterPath: row?.posterPath ?? null,
-      score: r.score,
-      why: [`${r.remainingEpisodes} episode${r.remainingEpisodes === 1 ? "" : "s"} left (~${hours}h)`],
-    };
-  });
-}

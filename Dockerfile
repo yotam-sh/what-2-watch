@@ -225,6 +225,24 @@ COPY --from=build --chown=appuser:appuser /app/node_modules/semver ./node_module
 COPY --from=build --chown=appuser:appuser /app/src/lib/tmdb ./src/lib/tmdb
 COPY --from=build --chown=appuser:appuser /app/src/lib/ml ./src/lib/ml
 
+# ---------------------------------------------------------------------------
+# Stats CLI (src/lib/stats/runStats.ts — `docker compose exec app npm run
+# stats`). Same situation again: not imported by the Next app, so nothing
+# traces it into .next/standalone.
+#
+# src/lib/reconcile.ts is NOT redundant with the copies above. The ML
+# backfill CLI never needed it (runBackfill.ts -> embedBackfill.ts ->
+# embed.ts stops short of it), but the stats script imports
+# LTR_MIN_LABELED_INTERACTIONS from src/lib/ml/ltr.ts, and ltr.ts imports
+# getReconciledWatchHistory from reconcile.ts. Importing the thresholds from
+# the modules that define them — rather than restating the numbers here — is
+# deliberate: a duplicated constant would drift silently and the report would
+# start lying about how close a model is to training. The cost is this one
+# extra file, traced by walking runStats.ts's imports rather than guessed.
+# ---------------------------------------------------------------------------
+COPY --from=build --chown=appuser:appuser /app/src/lib/reconcile.ts ./src/lib/reconcile.ts
+COPY --from=build --chown=appuser:appuser /app/src/lib/stats ./src/lib/stats
+
 COPY --chown=appuser:appuser docker-entrypoint.sh ./docker-entrypoint.sh
 
 # `.next/standalone` is NOT clean of the build stage's throwaway database.

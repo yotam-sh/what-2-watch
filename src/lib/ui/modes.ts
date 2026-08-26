@@ -4,7 +4,7 @@
 // than imported: that module transitively pulls in better-sqlite3/db/client,
 // which has no business being referenced, even type-only, from client
 // bundle code).
-export type DecideMode = "discover" | "rewatch" | "continue" | "watchlist" | "binge";
+export type DecideMode = "discover" | "rewatch" | "continue" | "watchlist";
 
 export interface ModeOption {
   value: DecideMode;
@@ -17,7 +17,6 @@ export const DECIDE_MODES: ModeOption[] = [
   { value: "rewatch", label: "Rewatch", blurb: "Something you loved before" },
   { value: "continue", label: "Continue", blurb: "Pick up where you left off" },
   { value: "watchlist", label: "Watchlist", blurb: "From your Plex watchlist" },
-  { value: "binge", label: "Binge", blurb: "A short binge, not a 9-season slog" },
 ];
 
 export const QUICK_RUNTIMES: Array<{ label: string; minutes: number | null }> = [

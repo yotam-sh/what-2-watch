@@ -13,15 +13,12 @@ import {
   genreAffinityScore,
   MIN_RATING_FOR_CENTROID,
   MIN_VIEWCOUNT_FOR_CENTROID,
-  rankBinge,
   selectCentroidSignals,
-  type BingeCandidate,
   type FilterableCandidate,
   type WatchSignal,
 } from "./score";
 
 const MOVIE = "movie" as const;
-const TV = "tv" as const;
 
 function vec(...xs: number[]): Float32Array {
   return l2Normalize(new Float32Array(xs));
@@ -271,51 +268,6 @@ describe("deriveSeed / applySeededJitter — deterministic 'roll again'", () => 
 
   it("deriveSeed differs across users", () => {
     expect(deriveSeed("user-1")).not.toBe(deriveSeed("user-2"));
-  });
-});
-
-describe("rankBinge — prefers short complete seasons over sprawling shows", () => {
-  it("ranks a 6-episode complete season above a 9-season procedural's tail end", () => {
-    const shortSeason: BingeCandidate = {
-      tmdbId: 1,
-      mediaType: TV,
-      runtime: 45,
-      leafCount: 6,
-      viewedLeafCount: 0,
-    };
-    const longRunningProcedural: BingeCandidate = {
-      tmdbId: 2,
-      mediaType: TV,
-      runtime: 45,
-      leafCount: 200,
-      viewedLeafCount: 190, // only 10 episodes "remaining" — deceptively close in raw count
-    };
-    const ranked = rankBinge([longRunningProcedural, shortSeason]);
-    expect(ranked[0].tmdbId).toBe(1);
-  });
-
-  it("excludes fully-watched shows", () => {
-    const finished: BingeCandidate = { tmdbId: 1, mediaType: TV, runtime: 30, leafCount: 10, viewedLeafCount: 10 };
-    expect(rankBinge([finished])).toHaveLength(0);
-  });
-
-  it("excludes shows with no leafCount on file (never synced)", () => {
-    const unknown: BingeCandidate = { tmdbId: 1, mediaType: TV, runtime: 30, leafCount: null, viewedLeafCount: null };
-    expect(rankBinge([unknown])).toHaveLength(0);
-  });
-
-  it("prefers less remaining runtime when total scale is equal", () => {
-    const shorter: BingeCandidate = { tmdbId: 1, mediaType: TV, runtime: 20, leafCount: 10, viewedLeafCount: 5 };
-    const longer: BingeCandidate = { tmdbId: 2, mediaType: TV, runtime: 60, leafCount: 10, viewedLeafCount: 5 };
-    const ranked = rankBinge([longer, shorter]);
-    expect(ranked[0].tmdbId).toBe(1);
-  });
-
-  it("falls back to a default per-episode runtime when runtime is unknown", () => {
-    const noRuntime: BingeCandidate = { tmdbId: 1, mediaType: TV, runtime: null, leafCount: 6, viewedLeafCount: 0 };
-    const ranked = rankBinge([noRuntime]);
-    expect(ranked).toHaveLength(1);
-    expect(ranked[0].remainingRuntimeMinutes).toBeGreaterThan(0);
   });
 });
 

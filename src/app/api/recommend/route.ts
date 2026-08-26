@@ -12,7 +12,7 @@ import { recommend, type RecommendMode, type RecommendOptions } from "@/lib/ml/r
 import type { ScoreFilters } from "@/lib/ml/score";
 import { lazilyEnrichStubCandidates } from "@/lib/tmdb/lazyEnrich";
 
-const VALID_MODES: RecommendMode[] = ["rewatch", "watchlist", "discover", "continue", "binge"];
+const VALID_MODES: RecommendMode[] = ["rewatch", "watchlist", "discover", "continue"];
 
 function parseFilters(raw: unknown): ScoreFilters | undefined {
   if (!raw || typeof raw !== "object") return undefined;

@@ -248,7 +248,20 @@ docker compose exec app node ./node_modules/tsx/dist/cli.mjs ./src/lib/tmdb/runB
 
 # Embeddings for every TMDB-enriched title still missing one.
 docker compose exec app node ./node_modules/tsx/dist/cli.mjs ./src/lib/ml/runBackfill.ts
+
+# Read-only report: what the app knows, when each source last synced, and how
+# close the learning layers are to switching on. Locally this is `npm run
+# stats`; in the container it needs the explicit tsx path like the two above.
+docker compose exec app node ./node_modules/tsx/dist/cli.mjs ./src/lib/stats/runStats.ts
 ```
+
+`runStats.ts` is the sanctioned way to inspect the database. The file is
+SQLCipher-encrypted, so the ordinary `sqlite3` CLI reports a wrong or absent
+key as `file is not a database` — indistinguishable from corruption. Rather
+than hand `SERVER_ENCRYPTION_KEY` to an external tool (or copy a decryptable
+database off the box), this reuses the app's own `db/client`, which already
+reads the key from the environment the container has. Every statement in it
+is a `SELECT`, and it runs as the image's non-root `appuser`.
 
 Both are safe to re-run or interrupt — each only selects titles still
 missing the relevant data (`genres IS NULL` / `embedding IS NULL`), so a

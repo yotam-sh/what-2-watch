@@ -25,6 +25,29 @@ import {
 } from "./library";
 import { upsertTitleStub } from "./titlesStub";
 
+/** Master switch for TV. Off: this app is movies-only for now.
+ *
+ *  WHY: every show scanned so far resolved to a NULL tmdb_id — 386 of 386 —
+ *  because scanAllShows is the one scan that never goes through
+ *  scanAndResolve, so shows are fetched without `includeGuids` and without
+ *  the comma-joined /library/metadata batch fallback that rescues movies
+ *  (see library.ts). Unresolved shows can't reach `titles`, so they were
+ *  invisible in every mode anyway; Binge, being TV-only, could only ever
+ *  return nothing and has been removed. Scanning them was pure cost: two
+ *  extra full-section scans per sync producing rows nothing reads.
+ *
+ *  The existing plex_items rows are deliberately left in place — they're
+ *  inert (aggregatePlexItemsByTitle skips NULL tmdb_id rows outright) and
+ *  they cost nothing but disk.
+ *
+ *  Flipping this back on is not sufficient to make TV work: the guid bug
+ *  above has to be fixed first, or it will just recreate 386 unresolved
+ *  rows. Note also that the candidate pools in recommend.ts are media-type
+ *  agnostic, so once shows DO resolve they will start appearing in
+ *  Discover/Rewatch/Continue — which is a product decision, not just a
+ *  bug fix. */
+const SHOW_SECTIONS_ENABLED: boolean = false;
+
 export interface UpsertMovieParams {
   userId: string;
   machineIdentifier: string;
@@ -265,7 +288,7 @@ export async function syncLibraries(params: {
     }
   }
 
-  for (const section of sections.filter((s) => s.type === "show")) {
+  for (const section of SHOW_SECTIONS_ENABLED ? sections.filter((s) => s.type === "show") : []) {
     const [{ items: episodes, includeGuidsWorked: episodesWorked, variantUsed: episodesVariant }, shows] =
       await Promise.all([scanWatchedEpisodes(ctx, section.key), scanAllShows(ctx, section.key)]);
     includeGuidsWorked = includeGuidsWorked ?? episodesWorked;

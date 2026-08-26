@@ -278,65 +278,6 @@ export function applySeededJitter<T extends ScoredKey>(scored: T[], seed: number
 }
 
 // ---------------------------------------------------------------------------
-// Binge mode — TV ranked by remaining runtime + overall scale, not episode
-// count. See the file-level note in recommend.ts for why "season count" is
-// approximated via total leafCount rather than a real season table (Plex
-// sync never captured season boundaries — only show- and episode-level
-// rows).
-// ---------------------------------------------------------------------------
-
-export interface BingeCandidate extends TitleIdentity {
-  mediaType: "tv";
-  runtime: number | null; // per-episode minutes
-  leafCount: number | null; // total episodes across all seasons
-  viewedLeafCount: number | null;
-}
-
-export interface BingeScore extends TitleIdentity {
-  mediaType: "tv";
-  remainingEpisodes: number;
-  remainingRuntimeMinutes: number;
-  score: number; // higher = better binge candidate
-}
-
-const DEFAULT_EPISODE_RUNTIME_MINUTES = 30;
-
-/** Penalty per total-series episode, applied on top of remaining runtime.
- *  This is the "season count, not episode count" proxy: two shows can have
- *  the same few episodes *remaining*, but a 6-episode limited series
- *  (leafCount=6) and a 220-episode procedural with 214 already watched
- *  (leafCount=220) are not the same commitment going forward — the
- *  procedural's habit of never actually ending is real signal even though
- *  its immediate remaining-runtime number looks identical. */
-export const BINGE_SCALE_PENALTY_PER_EPISODE = 0.5;
-
-export function scoreBingeCandidate(c: BingeCandidate): BingeScore | null {
-  if (c.leafCount === null || c.leafCount <= 0) return null;
-  const viewed = c.viewedLeafCount ?? 0;
-  const remainingEpisodes = Math.max(c.leafCount - viewed, 0);
-  if (remainingEpisodes === 0) return null; // fully watched — not a binge candidate
-
-  const perEpisodeRuntime = c.runtime && c.runtime > 0 ? c.runtime : DEFAULT_EPISODE_RUNTIME_MINUTES;
-  const remainingRuntimeMinutes = remainingEpisodes * perEpisodeRuntime;
-  const score = -remainingRuntimeMinutes - c.leafCount * BINGE_SCALE_PENALTY_PER_EPISODE;
-
-  return {
-    tmdbId: c.tmdbId,
-    mediaType: "tv",
-    remainingEpisodes,
-    remainingRuntimeMinutes,
-    score,
-  };
-}
-
-export function rankBinge(candidates: BingeCandidate[]): BingeScore[] {
-  return candidates
-    .map(scoreBingeCandidate)
-    .filter((s): s is BingeScore => s !== null)
-    .sort((a, b) => b.score - a.score);
-}
-
-// ---------------------------------------------------------------------------
 // Genre affinity + median runtime — shared taste-signal helpers used both by
 // the live scorer (recommend.ts) and by ltr.ts's feature construction, so
 // both places measure "does this candidate match what the user likes"
