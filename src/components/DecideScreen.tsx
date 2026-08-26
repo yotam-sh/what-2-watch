@@ -58,8 +58,6 @@ export function DecideScreen({ username }: { username: string }) {
   const [fetchError, setFetchError] = useState<{ status: number; message: string } | null>(null);
   const [verdict, setVerdict] = useState<"picked" | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [dragX, setDragX] = useState(0);
-  const [dragY, setDragY] = useState(0);
 
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -67,6 +65,18 @@ export function DecideScreen({ username }: { username: string }) {
   const dragXRef = useRef(0);
   const dragYRef = useRef(0);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
+
+  // The drag is painted straight onto these nodes rather than held in state.
+  // Drag offset was React state until it turned out to be the reason swiping
+  // felt rigid: a setState per touchmove re-renders this whole screen at
+  // touch frequency (120Hz on a ProMotion phone), so the card lands a frame
+  // or more behind the finger. None of these values outlive the gesture and
+  // nothing else in the tree reads them, so state bought nothing.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const skipLabelRef = useRef<HTMLSpanElement>(null);
+  const snoozeLabelRef = useRef<HTMLSpanElement>(null);
+  const pickLabelRef = useRef<HTMLSpanElement>(null);
+  const rafRef = useRef<number | null>(null);
 
   // Applies the filter sheet's staged draft as the screen's real (committed)
   // filter state, in one go — reusing the existing single-field reducer
@@ -142,11 +152,46 @@ export function DecideScreen({ username }: { username: string }) {
     [candidate, mode, filters],
   );
 
+  /** Paints the current drag offset. Runs inside requestAnimationFrame, so
+   *  it fires at most once per displayed frame no matter how fast touchmove
+   *  arrives, and it only ever touches compositor-friendly properties
+   *  (transform, opacity) — no layout, no React reconciliation. */
+  const paintDrag = useCallback((x: number, y: number) => {
+    const card = cardRef.current;
+    if (card) card.style.transform = `translate(${x}px, ${y}px) rotate(${x / 20}deg)`;
+
+    // Same decision onTouchEnd makes, so the label that lights up is always
+    // the verdict a release would actually commit.
+    const vertical = Math.abs(y) > Math.abs(x);
+    const progress = Math.min(1, Math.abs(vertical ? y : x) / SWIPE_THRESHOLD_PX);
+    if (skipLabelRef.current) skipLabelRef.current.style.opacity = String(!vertical && x < 0 ? progress : 0);
+    if (snoozeLabelRef.current) snoozeLabelRef.current.style.opacity = String(!vertical && x > 0 ? progress : 0);
+    if (pickLabelRef.current) pickLabelRef.current.style.opacity = String(vertical && y < 0 ? progress : 0);
+  }, []);
+
+  /** Returns the card to rest. Restores the CSS transition first so the
+   *  snap-back animates, unlike the drag itself which must not. */
   const resetDrag = useCallback(() => {
-    setDragX(0);
-    setDragY(0);
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
     dragXRef.current = 0;
     dragYRef.current = 0;
+    const card = cardRef.current;
+    if (card) {
+      card.style.transition = "";
+      card.style.willChange = "";
+    }
+    paintDrag(0, 0);
+  }, [paintDrag]);
+
+  // A gesture interrupted by unmount (navigating away mid-drag) would
+  // otherwise leave a scheduled frame pointing at detached nodes.
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
   }, []);
 
   const handleSkip = useCallback(() => {
@@ -196,15 +241,30 @@ export function DecideScreen({ username }: { username: string }) {
     dragging.current = true;
     startX.current = e.touches[0]!.clientX;
     startY.current = e.touches[0]!.clientY;
+    const card = cardRef.current;
+    if (card) {
+      // Kill the transition for the duration of the drag. The card carries
+      // `transition-transform` so its snap-back animates, but leaving that
+      // on while dragging means every frame sets a new *target* that the
+      // card then eases toward over the transition's duration — so it
+      // permanently trails the finger by that much. That lag is what reads
+      // as rigid and choppy; during a drag the card must track the finger
+      // exactly, with the easing reserved for the release.
+      card.style.transition = "none";
+      card.style.willChange = "transform";
+    }
   }
   function onTouchMove(e: TouchEvent<HTMLDivElement>) {
     if (!dragging.current) return;
-    const nextX = e.touches[0]!.clientX - startX.current;
-    const nextY = e.touches[0]!.clientY - startY.current;
-    dragXRef.current = nextX;
-    dragYRef.current = nextY;
-    setDragX(nextX);
-    setDragY(nextY);
+    dragXRef.current = e.touches[0]!.clientX - startX.current;
+    dragYRef.current = e.touches[0]!.clientY - startY.current;
+    // Coalesce: touchmove can outpace the display, so record the latest
+    // position every time but repaint only once per frame.
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      paintDrag(dragXRef.current, dragYRef.current);
+    });
   }
   function onTouchEnd() {
     if (!dragging.current) return;
@@ -245,18 +305,6 @@ export function DecideScreen({ username }: { username: string }) {
         activeFilterDescriptions: describeActiveFilters(filters),
         fetchError,
       });
-
-  // Which verdict the current drag is heading for, and how far along it is
-  // (0..1). Purely derived from dragX/dragY — no extra state, no extra
-  // handler — and drives nothing but the opacity of the three labels over
-  // the poster. onTouchEnd re-derives the same decision independently, so
-  // these can never disagree about what a release would do.
-  const verticalDrag = Math.abs(dragY) > Math.abs(dragX);
-  const dragAxis = verticalDrag ? dragY : dragX;
-  const dragProgress = Math.min(1, Math.abs(dragAxis) / SWIPE_THRESHOLD_PX);
-  const skipOpacity = !verticalDrag && dragX < 0 ? dragProgress : 0;
-  const snoozeOpacity = !verticalDrag && dragX > 0 ? dragProgress : 0;
-  const pickOpacity = verticalDrag && dragY < 0 ? dragProgress : 0;
 
   return (
     // The aurora is a SIBLING of <main>, not a child, and that is load-bearing:
@@ -329,11 +377,19 @@ export function DecideScreen({ username }: { username: string }) {
               and the swipe hint off the bottom. */}
           <div className="flex min-h-0 w-full flex-1 items-center justify-center">
             <div
+              ref={cardRef}
               onTouchStart={onTouchStart}
               onTouchMove={onTouchMove}
               onTouchEnd={onTouchEnd}
-              style={{ transform: `translate(${dragX}px, ${dragY}px) rotate(${dragX / 20}deg)` }}
-              className="relative aspect-[2/3] h-full max-h-[450px] max-w-[300px] touch-pan-y select-none transition-transform"
+              onTouchCancel={onTouchEnd}
+              // touch-none, not touch-pan-y: pan-y hands vertical gestures to
+              // the browser, which now competes with swipe-up-to-pick — the
+              // browser waits to see whether it should scroll before letting
+              // touchmove through, which stutters the vertical drag and can
+              // swallow it outright. This card owns all three directions.
+              // The transition is for the snap-back only; onTouchStart
+              // disables it for the duration of the drag.
+              className="relative aspect-[2/3] h-full max-h-[450px] max-w-[300px] touch-none select-none transition-transform duration-[180ms] ease-out"
             >
               <div
                 // Inset hairline so the artwork has a defined edge against the
@@ -344,19 +400,23 @@ export function DecideScreen({ username }: { username: string }) {
                 <PosterImage posterPath={candidate.posterPath} title={candidate.title} className="h-full w-full" />
               </div>
 
-              {/* Swipe verdict labels. Presentation only — they read the drag
-                  offsets and never write them, and onTouchEnd re-derives the
-                  same decision independently against SWIPE_THRESHOLD_PX. */}
+              {/* Swipe verdict labels. Their opacity is written directly by
+                  paintDrag rather than rendered from state — same reason the
+                  transform is: React must not re-render mid-gesture. They
+                  start hidden and onTouchEnd re-derives the same decision
+                  independently against SWIPE_THRESHOLD_PX. */}
               <span
+                ref={skipLabelRef}
                 aria-hidden="true"
-                style={{ opacity: skipOpacity }}
+                style={{ opacity: 0 }}
                 className="pointer-events-none absolute left-3 top-3 rounded-full bg-[color:var(--negative-soft)] px-2.5 py-1 text-[11px] font-semibold text-negative"
               >
                 Not tonight
               </span>
               <span
+                ref={snoozeLabelRef}
                 aria-hidden="true"
-                style={{ opacity: snoozeOpacity }}
+                style={{ opacity: 0 }}
                 className="pointer-events-none absolute right-3 top-3 rounded-full bg-elevated px-2.5 py-1 text-[11px] font-semibold text-secondary"
               >
                 Maybe later
@@ -365,8 +425,9 @@ export function DecideScreen({ username }: { username: string }) {
                   action, two presentations, never both on screen at once —
                   so the one-coral-element rule still holds. */}
               <span
+                ref={pickLabelRef}
                 aria-hidden="true"
-                style={{ opacity: pickOpacity }}
+                style={{ opacity: 0 }}
                 className="pointer-events-none absolute inset-x-3 top-3 rounded-full bg-[color:var(--glow-soft)] px-2.5 py-1 text-center text-[11px] font-semibold text-glow"
               >
                 Watch this
