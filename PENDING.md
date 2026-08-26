@@ -59,10 +59,13 @@ consciously deferred, not because they were missed — each says why.
 
 ## Deferred by choice
 
-- **"Comet style" restyle**
-  Parked pending a concrete spec — colours, type scale, spacing, radii,
-  motion. Deliberately not guessed at, since a wrong interpretation would
-  spread across every screen.
+- **App icon artwork**
+  The Comet re-skin landed, but `public/icons/*.png` (192, 512, maskable,
+  apple-touch) still carry the old indigo `#4f46e5` mark. Names, sizes and
+  manifest wiring are already correct — only the pixels are stale. They need
+  regenerating against `--comet-violet-400` (`#a382f7`) and the comet mark in
+  `src/components/ui/Wordmark.tsx`. Tracked as `TODO(artwork)` in
+  `src/app/manifest.ts`.
 
 - **LLM mood parser / re-ranker**
   Offered during planning and declined for v1: natural-language mood input

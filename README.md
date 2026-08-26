@@ -1,4 +1,4 @@
-# what-to-watch
+# what2watch
 
 Picks tonight's movie or show from your real Plex + Letterboxd history.
 See `docs`/the project plan for the full architecture. Shipped so far:

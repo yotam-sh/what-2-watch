@@ -44,8 +44,8 @@ export default function PlexAuthCallbackPage() {
   }, []);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 px-6 py-12 text-center">
-      <p className="text-zinc-300" role="status">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-void px-6 py-12 text-center">
+      <p className="text-body" role="status">
         {closeFailed
           ? "Authorised — you can close this window and return to the app."
           : "Authorised. Closing this window..."}

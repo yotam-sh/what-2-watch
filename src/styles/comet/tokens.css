@@ -1,0 +1,101 @@
+/* Comet design tokens — the vendored design system, copied verbatim from the
+   spec. These values ARE the design language: do not round them, rename
+   them, or "improve" them. Everything else in the app authors against the
+   semantic aliases at the bottom of this block (--surface-card, --accent,
+   --text-body, ...), never against the raw ramps above them — that
+   indirection is what makes a palette change a one-file edit.
+
+   Imported by src/app/globals.css, which maps a subset of these into
+   Tailwind v4's theme so utilities (bg-card, text-accent, border-line, ...)
+   exist for them.
+
+   Dark only. There is exactly one palette — no prefers-color-scheme block
+   anywhere in this app, and no `dark:` variants in any component. */
+:root {
+  /* neutral ramp — warm purple-black */
+  --comet-ink-0: #100d16; --comet-ink-1: #15111d; --comet-ink-2: #1c1726;
+  --comet-ink-3: #241d30; --comet-ink-4: #2e2640; --comet-ink-5: #3a3050;
+
+  /* hairlines */
+  --comet-line: #322a42; --comet-line-soft: #271f34; --comet-line-strong: #463a5e;
+
+  /* text — warm off-whites */
+  --comet-text-0: #f2edf8; --comet-text-1: #d7cfe6; --comet-text-2: #a89ec0;
+  --comet-text-3: #756a8c; --comet-text-4: #564d6b;
+
+  /* comet violet */
+  --comet-violet-100: #ede7ff; --comet-violet-200: #d3c4ff; --comet-violet-300: #b9a3fb;
+  --comet-violet-400: #a382f7; --comet-violet-500: #8b5cf6; --comet-violet-600: #7338e8;
+  --comet-violet-700: #5b27bf;
+
+  /* comet glow — warm coral */
+  --comet-glow-300: #ffc09a; --comet-glow-400: #ff9d6b;
+  --comet-glow-500: #fb7d43; --comet-glow-600: #e0631f;
+
+  /* semantic data hues */
+  --comet-up-400: #46cf83; --comet-down-400: #ff5d6c;
+  --comet-warn-400: #f0ab3e; --comet-info-400: #5cc8ff;
+
+  /* semantic aliases — author against these, never the raw ramp */
+  --color-bg: var(--comet-ink-1);
+  --color-bg-sunken: var(--comet-ink-0);
+  --surface-card: var(--comet-ink-2);
+  --surface-elevated: var(--comet-ink-3);
+  --surface-hover: var(--comet-ink-4);
+  --surface-active: var(--comet-ink-5);
+  --surface-inset: var(--comet-ink-0);
+  --border: var(--comet-line);
+  --border-soft: var(--comet-line-soft);
+  --border-strong: var(--comet-line-strong);
+  --text-heading: var(--comet-text-0);
+  --text-body: var(--comet-text-1);
+  --text-secondary: var(--comet-text-2);
+  --text-muted: var(--comet-text-3);
+  --text-disabled: var(--comet-text-4);
+  --accent: var(--comet-violet-400);
+  --accent-hover: var(--comet-violet-300);
+  --accent-strong: var(--comet-violet-500);
+  --accent-contrast: #1a1023;
+  --accent-soft: rgba(139, 92, 246, 0.16);
+  --accent-soft-hover: rgba(139, 92, 246, 0.26);
+  --accent-line: rgba(163, 130, 247, 0.42);
+  --glow: var(--comet-glow-400);
+  --glow-soft: rgba(255, 157, 107, 0.16);
+  --glow-contrast: #24120a;
+  --positive: var(--comet-up-400);
+  --positive-soft: rgba(70, 207, 131, 0.14);
+  --negative: var(--comet-down-400);
+  --negative-soft: rgba(255, 93, 108, 0.14);
+  --warning: var(--comet-warn-400);
+  --warning-soft: rgba(240, 171, 62, 0.14);
+  --info: var(--comet-info-400);
+  --focus-ring: var(--comet-violet-400);
+  --selection-bg: rgba(139, 92, 246, 0.32);
+
+  /* radii — 4px grid */
+  --radius-xs: 4px; --radius-sm: 6px; --radius: 10px;
+  --radius-md: 12px; --radius-lg: 16px; --radius-xl: 22px; --radius-pill: 999px;
+  --control-h: 38px; --control-h-sm: 30px; --control-h-lg: 46px;
+
+  /* elevation — deep, near-black, not spread */
+  --shadow-sm: 0 1px 2px rgba(8, 5, 14, 0.45);
+  --shadow-md: 0 4px 14px rgba(8, 5, 14, 0.50);
+  --shadow-lg: 0 12px 34px rgba(6, 4, 12, 0.58);
+  --shadow-xl: 0 24px 60px rgba(4, 2, 10, 0.66);
+  --glow-violet: 0 0 0 1px rgba(139, 92, 246, 0.40), 0 6px 24px rgba(124, 58, 237, 0.34);
+  --glow-coral: 0 0 0 1px rgba(255, 157, 107, 0.40), 0 6px 22px rgba(251, 125, 67, 0.30);
+  --ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--focus-ring);
+
+  /* blur + motion */
+  --blur-sm: 6px; --blur-md: 14px; --blur-lg: 24px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 120ms; --dur: 180ms; --dur-slow: 280ms;
+
+  /* signature gradients */
+  --grad-comet: linear-gradient(105deg, var(--comet-violet-500) 0%, var(--comet-glow-400) 100%);
+  --grad-aurora:
+    radial-gradient(120% 120% at 12% -10%, rgba(139, 92, 246, 0.20) 0%, rgba(139, 92, 246, 0) 55%),
+    radial-gradient(120% 120% at 100% 0%, rgba(255, 157, 107, 0.12) 0%, rgba(255, 157, 107, 0) 50%);
+  --grad-scrim: linear-gradient(to bottom, rgba(16, 13, 22, 0.92) 0%, rgba(16, 13, 22, 0) 100%);
+}

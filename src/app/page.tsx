@@ -13,12 +13,13 @@ export default async function Home() {
   const user = await getOptionalUser();
 
   if (!user) {
-    // Full-bleed dark backdrop, one centred card — modelled on Overseerr's
-    // login screen. Deliberately not theme-aware (no dark: variants): this
-    // is the one screen in the app that always looks like this, regardless
-    // of system light/dark preference, same as Overseerr's own login.
+    // Full-bleed sunken void with the aurora wash behind it, one centred
+    // card — modelled on Overseerr's login screen. Not theme-aware, because
+    // nothing in this app is: Comet is dark-only, one palette, no
+    // prefers-color-scheme branch anywhere.
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 px-6 py-12">
+      <main className="flex min-h-screen flex-col items-center justify-center px-6 py-12">
+        <div className="aurora aurora-void" aria-hidden="true" />
         <PlexSignInCard />
       </main>
     );

@@ -9,6 +9,10 @@
 // the user never saw, which pollutes the exact training signal the phase
 // brief calls "load-bearing, not decoration."
 import { useCallback, useEffect, useReducer, useRef, useState, type TouchEvent } from "react";
+import { RotateCw } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { StaticChip } from "@/components/ui/Chip";
+import { Wordmark } from "@/components/ui/Wordmark";
 import { postJson } from "@/lib/client/http";
 import { runPlexSync } from "@/lib/client/plexSync";
 import { useLinkStatus } from "@/lib/client/useLinkStatus";
@@ -55,10 +59,13 @@ export function DecideScreen({ username }: { username: string }) {
   const [verdict, setVerdict] = useState<"picked" | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [dragX, setDragX] = useState(0);
+  const [dragY, setDragY] = useState(0);
 
   const dragging = useRef(false);
   const startX = useRef(0);
+  const startY = useRef(0);
   const dragXRef = useRef(0);
+  const dragYRef = useRef(0);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
 
   // Applies the filter sheet's staged draft as the screen's real (committed)
@@ -135,17 +142,24 @@ export function DecideScreen({ username }: { username: string }) {
     [candidate, mode, filters],
   );
 
+  const resetDrag = useCallback(() => {
+    setDragX(0);
+    setDragY(0);
+    dragXRef.current = 0;
+    dragYRef.current = 0;
+  }, []);
+
   const handleSkip = useCallback(() => {
     sendFeedback("skipped");
-    setDragX(0);
+    resetDrag();
     roll({ seed: Date.now() });
-  }, [sendFeedback, roll]);
+  }, [sendFeedback, resetDrag, roll]);
 
   const handleSnooze = useCallback(() => {
     sendFeedback("snoozed");
-    setDragX(0);
+    resetDrag();
     roll({ seed: Date.now() });
-  }, [sendFeedback, roll]);
+  }, [sendFeedback, resetDrag, roll]);
 
   const handlePick = useCallback(() => {
     sendFeedback("picked");
@@ -168,27 +182,50 @@ export function DecideScreen({ username }: { username: string }) {
     roll({ seed: Date.now() });
   }
 
+  // Three-way swipe, which is the entire verdict UI on a phone (the buttons
+  // below are visually hidden there — see the sr-only note on that row).
+  //   left  → Not tonight   (skip)
+  //   right → Maybe later   (snooze)
+  //   up    → Watch this    (pick)
+  // A drag is committed to whichever axis it travelled furthest on, so a
+  // sloppy diagonal resolves to one verdict rather than firing two or
+  // neither. Downward drags are deliberately inert: there is no fourth
+  // verdict, and on a phone a downward gesture over content usually means
+  // "scroll" or "pull to refresh", so swallowing it would be rude.
   function onTouchStart(e: TouchEvent<HTMLDivElement>) {
     dragging.current = true;
     startX.current = e.touches[0]!.clientX;
+    startY.current = e.touches[0]!.clientY;
   }
   function onTouchMove(e: TouchEvent<HTMLDivElement>) {
     if (!dragging.current) return;
-    const next = e.touches[0]!.clientX - startX.current;
-    dragXRef.current = next;
-    setDragX(next);
+    const nextX = e.touches[0]!.clientX - startX.current;
+    const nextY = e.touches[0]!.clientY - startY.current;
+    dragXRef.current = nextX;
+    dragYRef.current = nextY;
+    setDragX(nextX);
+    setDragY(nextY);
   }
   function onTouchEnd() {
     if (!dragging.current) return;
     dragging.current = false;
     const finalX = dragXRef.current;
-    if (finalX <= -SWIPE_THRESHOLD_PX) {
+    const finalY = dragYRef.current;
+    const verticalWins = Math.abs(finalY) > Math.abs(finalX);
+
+    if (verticalWins) {
+      if (finalY <= -SWIPE_THRESHOLD_PX) {
+        handlePick();
+        return;
+      }
+    } else if (finalX <= -SWIPE_THRESHOLD_PX) {
       handleSkip();
+      return;
     } else if (finalX >= SWIPE_THRESHOLD_PX) {
-      handlePick();
-    } else {
-      setDragX(0);
+      handleSnooze();
+      return;
     }
+    resetDrag();
   }
 
   const plexLinked = plex?.linked ?? false;
@@ -209,18 +246,53 @@ export function DecideScreen({ username }: { username: string }) {
         fetchError,
       });
 
+  // Which verdict the current drag is heading for, and how far along it is
+  // (0..1). Purely derived from dragX/dragY — no extra state, no extra
+  // handler — and drives nothing but the opacity of the three labels over
+  // the poster. onTouchEnd re-derives the same decision independently, so
+  // these can never disagree about what a release would do.
+  const verticalDrag = Math.abs(dragY) > Math.abs(dragX);
+  const dragAxis = verticalDrag ? dragY : dragX;
+  const dragProgress = Math.min(1, Math.abs(dragAxis) / SWIPE_THRESHOLD_PX);
+  const skipOpacity = !verticalDrag && dragX < 0 ? dragProgress : 0;
+  const snoozeOpacity = !verticalDrag && dragX > 0 ? dragProgress : 0;
+  const pickOpacity = verticalDrag && dragY < 0 ? dragProgress : 0;
+
   return (
-    <main className="flex min-h-screen-dvh flex-col animate-content-in">
-      <header className="px-4 pt-6">
-        <p className="text-sm text-zinc-500">Hey {username}, what to watch tonight?</p>
+    // The aurora is a SIBLING of <main>, not a child, and that is load-bearing:
+    // animate-content-in applies a CSS transform, and a transformed ancestor
+    // becomes the containing block for its `position: fixed` descendants — the
+    // same spec rule that forced FilterSheet to portal out to document.body.
+    // Nested here, the wash would pin itself to a <main> that grows taller
+    // than the viewport and scroll away with the content.
+    <>
+      <div className="aurora" aria-hidden="true" />
+      {/* Fixed to the viewport minus the nav on a phone, with overflow
+          clipped: this screen is a single static surface you swipe on, not a
+          document you scroll. Desktop keeps the ordinary growing page. */}
+      <main className="flex h-app-screen flex-col overflow-hidden animate-content-in sm:h-auto sm:min-h-screen-dvh sm:overflow-visible">
+      <header className="flex shrink-0 items-start justify-between gap-3 px-4 pt-4 sm:pt-6">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-secondary">Tonight</p>
+          <p className="mt-0.5 truncate font-display text-[18px] font-semibold tracking-[-0.01em] text-heading">
+            Hey {username}, what to watch tonight?
+          </p>
+        </div>
+        <div className="shrink-0 pt-0.5">
+          <Wordmark size="sm" />
+        </div>
       </header>
 
-      <ModeSelector mode={mode} onChange={setMode} />
-      <FilterButton
-        ref={filterButtonRef}
-        activeCount={activeFilterCount(filters)}
-        onClick={() => setFilterSheetOpen(true)}
-      />
+      {/* Mode and filters share one row — see ModeSelector for why the pill
+          strip becomes a native select at this width. */}
+      <div className="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3">
+        <ModeSelector mode={mode} onChange={setMode} />
+        <FilterButton
+          ref={filterButtonRef}
+          activeCount={activeFilterCount(filters)}
+          onClick={() => setFilterSheetOpen(true)}
+        />
+      </div>
       <FilterSheet
         open={filterSheetOpen}
         committedFilters={filters}
@@ -237,83 +309,137 @@ export function DecideScreen({ username }: { username: string }) {
           syncing={syncing}
         />
       ) : !candidate ? null : verdict === "picked" ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-          <p className="text-lg font-semibold">Enjoy {candidate.title}!</p>
-          <p className="max-w-xs text-sm text-zinc-500">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-6 text-center">
+          <p className="font-display text-[22px] font-semibold tracking-[-0.02em] text-heading">
+            Enjoy {candidate.title}!
+          </p>
+          <p className="max-w-xs text-[13px] text-secondary">
             We&apos;ll remember you picked this — it helps future rolls get better.
           </p>
-          <button
-            onClick={() => roll({ seed: Date.now() })}
-            className="tap-target rounded-md border border-zinc-300 px-5 py-2.5 font-medium dark:border-zinc-700"
-          >
+          <Button onClick={() => roll({ seed: Date.now() })} variant="secondary">
             Roll for next time
-          </button>
+          </Button>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4">
-          <div
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-            style={{ transform: `translateX(${dragX}px) rotate(${dragX / 20}deg)` }}
-            className="relative w-full max-w-xs touch-pan-y select-none transition-transform"
-          >
-            <div className="aspect-[2/3] w-full overflow-hidden rounded-xl shadow-lg">
-              <PosterImage posterPath={candidate.posterPath} title={candidate.title} className="h-full w-full" />
+        <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 pb-2">
+          {/* The poster takes whatever vertical space is left and no more —
+              that's what keeps this screen inside one viewport on a phone.
+              Height drives the box (max 450px = 300px wide at 2:3), so the
+              artwork shrinks on a short screen instead of pushing the title
+              and the swipe hint off the bottom. */}
+          <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+            <div
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+              style={{ transform: `translate(${dragX}px, ${dragY}px) rotate(${dragX / 20}deg)` }}
+              className="relative aspect-[2/3] h-full max-h-[450px] max-w-[300px] touch-pan-y select-none transition-transform"
+            >
+              <div
+                // Inset hairline so the artwork has a defined edge against the
+                // void — posters are frequently near-black at their borders.
+                style={{ boxShadow: "inset 0 0 0 1px var(--hairline-inset)" }}
+                className="h-full w-full overflow-hidden rounded-[16px]"
+              >
+                <PosterImage posterPath={candidate.posterPath} title={candidate.title} className="h-full w-full" />
+              </div>
+
+              {/* Swipe verdict labels. Presentation only — they read the drag
+                  offsets and never write them, and onTouchEnd re-derives the
+                  same decision independently against SWIPE_THRESHOLD_PX. */}
+              <span
+                aria-hidden="true"
+                style={{ opacity: skipOpacity }}
+                className="pointer-events-none absolute left-3 top-3 rounded-full bg-[color:var(--negative-soft)] px-2.5 py-1 text-[11px] font-semibold text-negative"
+              >
+                Not tonight
+              </span>
+              <span
+                aria-hidden="true"
+                style={{ opacity: snoozeOpacity }}
+                className="pointer-events-none absolute right-3 top-3 rounded-full bg-elevated px-2.5 py-1 text-[11px] font-semibold text-secondary"
+              >
+                Maybe later
+              </span>
+              {/* Coral, matching the "Watch this" button below: same single
+                  action, two presentations, never both on screen at once —
+                  so the one-coral-element rule still holds. */}
+              <span
+                aria-hidden="true"
+                style={{ opacity: pickOpacity }}
+                className="pointer-events-none absolute inset-x-3 top-3 rounded-full bg-[color:var(--glow-soft)] px-2.5 py-1 text-center text-[11px] font-semibold text-glow"
+              >
+                Watch this
+              </span>
             </div>
           </div>
 
-          <div className="text-center">
-            <h2 className="text-xl font-semibold">
+          <div className="shrink-0 text-center">
+            <h2 className="font-display text-[22px] font-bold leading-tight tracking-[-0.02em] text-heading sm:text-[28px]">
               {candidate.title}{" "}
-              {candidate.year ? <span className="font-normal text-zinc-500">({candidate.year})</span> : null}
+              {candidate.year ? (
+                <span className="font-mono text-[16px] font-normal tabular-nums text-secondary sm:text-[18px]">
+                  ({candidate.year})
+                </span>
+              ) : null}
             </h2>
-            {candidate.runtime ? <p className="text-sm text-zinc-500">{candidate.runtime} min</p> : null}
+            {candidate.runtime ? (
+              <p className="mt-1 font-mono text-xs tabular-nums text-muted">{candidate.runtime} min</p>
+            ) : null}
           </div>
 
           {candidate.why.length > 0 && (
-            <ul className="flex flex-wrap justify-center gap-1.5">
+            <ul className="flex shrink-0 flex-wrap justify-center gap-1.5">
               {candidate.why.map((reason) => (
-                <li
-                  key={reason}
-                  className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-                >
-                  {reason}
-                </li>
+                <StaticChip key={reason}>{reason}</StaticChip>
               ))}
             </ul>
           )}
 
-          <p className="text-xs text-zinc-400">Swipe left to skip, right to pick — or use the buttons below.</p>
+          {/* px-12 keeps this clear of the Roll again button pinned to the
+              bottom-left corner below — they sit at the same height. */}
+          <p className="shrink-0 px-12 text-center text-[11px] text-muted">
+            Swipe left to pass, right for later, up to watch.
+          </p>
 
-          <div className="mt-1 flex w-full max-w-xs items-center justify-between gap-2">
-            <button
-              onClick={handleSkip}
-              className="tap-target flex-1 rounded-md border border-zinc-300 py-2.5 text-sm font-medium dark:border-zinc-700"
-            >
-              Not tonight
-            </button>
-            <button
-              onClick={handleSnooze}
-              className="tap-target flex-1 rounded-md border border-zinc-300 py-2.5 text-sm font-medium dark:border-zinc-700"
-            >
-              Maybe later
-            </button>
+          {/* Visually hidden on a phone, where the swipe gestures above are
+              the interface — but still in the DOM and still focusable, so
+              keyboard and screen-reader users keep every verdict. A gesture
+              is not an accessible control; deleting these outright would
+              have made the screen unusable without a touchscreen.
+              `focus:not-sr-only` also brings them back on screen the moment
+              someone tabs to one, so they can be seen as well as heard. */}
+          <div className="sr-only flex w-full max-w-[300px] shrink-0 flex-col gap-2 focus-within:not-sr-only sm:not-sr-only sm:flex">
+            <div className="flex items-center justify-between gap-2">
+              <Button onClick={handleSkip} variant="secondary" className="flex-1">
+                Not tonight
+              </Button>
+              <Button onClick={handleSnooze} variant="secondary" className="flex-1">
+                Maybe later
+              </Button>
+            </div>
+            {/* The one coral control in the entire app. Nothing else may use
+                the glow variant — see Button.tsx. */}
+            <Button onClick={handlePick} variant="glow" size="lg" className="w-full">
+              Watch this
+            </Button>
           </div>
+
+          {/* Roll again: an escape hatch for "I don't want to judge this
+              one." Deliberately small and out of the way in the bottom-left
+              corner — it must stay reachable without ever competing with the
+              three verdicts, since using it records no signal at all. */}
           <button
-            onClick={handlePick}
-            className="tap-target w-full max-w-xs rounded-md bg-brand py-3 text-base font-semibold text-brand-foreground"
-          >
-            Watch this
-          </button>
-          <button
+            type="button"
             onClick={() => roll({ seed: Date.now() })}
-            className="tap-target text-sm font-medium text-zinc-500 underline"
+            aria-label="Roll again"
+            className="tap-target absolute bottom-0 left-0 flex h-[44px] w-[44px] items-center justify-center rounded-full text-muted transition-colors duration-[180ms] ease-out hover:bg-hover hover:text-accent active:translate-y-px"
           >
-            Roll again
+            <RotateCw className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
       )}
-    </main>
+      </main>
+    </>
   );
 }

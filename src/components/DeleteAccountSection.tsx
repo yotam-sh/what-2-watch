@@ -7,7 +7,12 @@
 // schema.ts cascades every table off users.id, everything — the Plex link,
 // watch history, watchlist, all recommendation data — is gone for good the
 // moment this succeeds. No "recover my account" path exists or can exist.
+//
+// Two-step by design: the outlined `danger` button only reveals the form.
+// The solid red button is the one that actually deletes, and it stays
+// disabled until the typed username matches.
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { postJson } from "@/lib/client/http";
 
 export function DeleteAccountSection({ username }: { username: string }) {
@@ -36,30 +41,27 @@ export function DeleteAccountSection({ username }: { username: string }) {
 
   if (!expanded) {
     return (
-      <section className="border-t border-zinc-200 px-4 py-6 dark:border-zinc-800">
-        <h2 className="mb-1 text-sm font-semibold text-red-600 dark:text-red-400">Danger zone</h2>
-        <p className="mb-3 text-sm text-zinc-500">Permanently delete your account and all its data.</p>
-        <button
-          onClick={() => setExpanded(true)}
-          className="tap-target rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 dark:border-red-900 dark:text-red-400"
-        >
+      <section className="rounded-[12px] border border-negative/40 bg-card px-5 py-5 shadow-comet-md">
+        <h2 className="mb-1 text-[13px] font-semibold text-negative">Danger zone</h2>
+        <p className="mb-3 text-[13px] text-secondary">Permanently delete your account and all its data.</p>
+        <Button onClick={() => setExpanded(true)} variant="danger">
           Delete account
-        </button>
+        </Button>
       </section>
     );
   }
 
   return (
-    <section className="border-t border-zinc-200 px-4 py-6 dark:border-zinc-800">
-      <h2 className="mb-1 text-sm font-semibold text-red-600 dark:text-red-400">Delete your account</h2>
-      <p className="mb-3 max-w-sm text-sm text-zinc-500">
+    <section className="rounded-[12px] border border-negative/40 bg-card px-5 py-5 shadow-comet-md">
+      <h2 className="mb-1 text-[13px] font-semibold text-negative">Delete your account</h2>
+      <p className="mb-3 max-w-sm text-[13px] text-secondary">
         This deletes your account and everything tied to it — your Plex sign-in, Letterboxd link,
         watch history, watchlist, and all recommendation data — immediately and permanently. There is
         no undo.
       </p>
       <form onSubmit={handleDelete} className="flex max-w-xs flex-col gap-2">
-        <label htmlFor="delete-confirm-username" className="text-sm font-medium">
-          Type your Plex username (<span className="font-mono">{username}</span>) to confirm
+        <label htmlFor="delete-confirm-username" className="text-[13px] font-medium text-body">
+          Type your Plex username (<span className="font-mono text-accent">{username}</span>) to confirm
         </label>
         <input
           id="delete-confirm-username"
@@ -67,28 +69,25 @@ export function DeleteAccountSection({ username }: { username: string }) {
           required
           value={confirmUsername}
           onChange={(e) => setConfirmUsername(e.target.value)}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-base outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
+          // text-base (16px) so iOS Safari doesn't zoom the page on focus.
+          className="h-[38px] rounded-[10px] border border-line bg-inset px-3 font-mono text-base text-body outline-none transition-colors duration-[180ms] ease-out placeholder:text-muted focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
         />
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-[13px] text-negative">{error}</p>}
         <div className="mt-1 flex gap-2">
-          <button
-            type="button"
+          <Button
             onClick={() => {
               setExpanded(false);
               setConfirmUsername("");
               setError(null);
             }}
-            className="tap-target flex-1 rounded-md border border-zinc-300 py-2 text-sm font-medium dark:border-zinc-700"
+            variant="secondary"
+            className="flex-1"
           >
             Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting || !matches}
-            className="tap-target flex-1 rounded-md bg-red-600 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
+          </Button>
+          <Button type="submit" disabled={submitting || !matches} variant="danger-solid" className="flex-1">
             {submitting ? "Deleting..." : "Permanently delete"}
-          </button>
+          </Button>
         </div>
       </form>
     </section>

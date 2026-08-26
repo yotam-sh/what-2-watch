@@ -3,11 +3,13 @@
 // plex_items directly, same rationale as /rewatch and /watchlist.
 import { eq } from "drizzle-orm";
 import Link from "next/link";
+import { CirclePlay, Link2Off } from "lucide-react";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { plexItems, plexLinks, titles } from "@/db/schema";
 import { SyncButton } from "@/components/SyncButton";
 import { TitleRow } from "@/components/TitleRow";
+import { buttonClasses } from "@/components/ui/Button";
 import { requireUser, UnauthenticatedError } from "@/lib/auth/guards";
 import { titleKey, type MediaType } from "@/lib/ml/key";
 import { isInProgress } from "@/lib/plex/library";
@@ -58,32 +60,38 @@ export default async function ContinuePage() {
 
   return (
     <main className="min-h-screen-dvh pb-6 animate-content-in">
-      <header className="px-4 pt-6 pb-2">
-        <h1 className="text-xl font-semibold">Continue</h1>
-        <p className="text-sm text-zinc-500">Pick up where you left off.</p>
+      <header className="px-4 pt-6 pb-3">
+        <h1 className="font-display text-[22px] font-semibold tracking-[-0.02em] text-heading">Continue</h1>
+        <p className="text-[13px] text-secondary">Pick up where you left off.</p>
       </header>
 
       {!link ? (
         <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-          <h2 className="text-lg font-semibold">Plex isn&apos;t linked</h2>
-          <p className="max-w-xs text-zinc-500">
+          <Link2Off className="h-[22px] w-[22px] text-muted" strokeWidth={2} aria-hidden="true" />
+          <h2 className="font-display text-[18px] font-semibold tracking-[-0.01em] text-heading">
+            Plex isn&apos;t linked
+          </h2>
+          <p className="max-w-xs text-[13px] text-secondary">
             In-progress items come from your Plex watch state — link your Plex account in Settings
             first.
           </p>
-          <Link href="/settings" className="tap-target rounded-md bg-brand px-5 py-2.5 font-medium text-brand-foreground">
+          <Link href="/settings" className={buttonClasses({ variant: "primary" })}>
             Go to Settings
           </Link>
         </div>
       ) : list.length === 0 ? (
         <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-          <h2 className="text-lg font-semibold">Nothing in progress</h2>
-          <p className="max-w-xs text-zinc-500">
+          <CirclePlay className="h-[22px] w-[22px] text-muted" strokeWidth={2} aria-hidden="true" />
+          <h2 className="font-display text-[18px] font-semibold tracking-[-0.01em] text-heading">
+            Nothing in progress
+          </h2>
+          <p className="max-w-xs text-[13px] text-secondary">
             Nothing&apos;s partway watched right now — or your sync is out of date.
           </p>
           <SyncButton endpoints={["/api/plex/sync"]} />
         </div>
       ) : (
-        <ul className="divide-y divide-zinc-100 dark:divide-zinc-900">
+        <ul>
           {list.map((item) => (
             <TitleRow
               key={titleKey(item)}
@@ -92,6 +100,7 @@ export default async function ContinuePage() {
               runtime={item.runtime}
               posterPath={item.posterPath}
               meta={item.percent !== null ? `${item.percent}% watched` : "In progress"}
+              percent={item.percent}
             />
           ))}
         </ul>

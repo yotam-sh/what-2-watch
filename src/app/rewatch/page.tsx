@@ -17,11 +17,13 @@
 // watch doesn't count here either.
 import { eq } from "drizzle-orm";
 import Link from "next/link";
+import { Link2Off, SearchX } from "lucide-react";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { plexItems, titles } from "@/db/schema";
 import { SyncButton } from "@/components/SyncButton";
-import { TitleRow } from "@/components/TitleRow";
+import { TitleCard } from "@/components/TitleCard";
+import { buttonClasses } from "@/components/ui/Button";
 import { requireUser, UnauthenticatedError } from "@/lib/auth/guards";
 import { titleKey, type MediaType } from "@/lib/ml/key";
 import { getReconciledWatchHistory } from "@/lib/reconcile";
@@ -74,40 +76,48 @@ export default async function RewatchPage() {
 
   return (
     <main className="min-h-screen-dvh pb-6 animate-content-in">
-      <header className="px-4 pt-6 pb-2">
-        <h1 className="text-xl font-semibold">Rewatch</h1>
-        <p className="text-sm text-zinc-500">Sorted by how long it&apos;s been since you last watched.</p>
+      <header className="px-4 pt-6 pb-3">
+        <h1 className="font-display text-[22px] font-semibold tracking-[-0.02em] text-heading">Rewatch</h1>
+        <p className="text-[13px] text-secondary">Sorted by how long it&apos;s been since you last watched.</p>
       </header>
 
       {!hasSyncedAnything ? (
         <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-          <h2 className="text-lg font-semibold">Nothing synced yet</h2>
-          <p className="max-w-xs text-zinc-500">
+          <Link2Off className="h-[22px] w-[22px] text-muted" strokeWidth={2} aria-hidden="true" />
+          <h2 className="font-display text-[18px] font-semibold tracking-[-0.01em] text-heading">
+            Nothing synced yet
+          </h2>
+          <p className="max-w-xs text-[13px] text-secondary">
             Link Plex in Settings and run a sync to see titles you&apos;ve already watched.
           </p>
-          <Link href="/settings" className="tap-target rounded-md bg-brand px-5 py-2.5 font-medium text-brand-foreground">
+          <Link href="/settings" className={buttonClasses({ variant: "primary" })}>
             Go to Settings
           </Link>
         </div>
       ) : list.length === 0 ? (
         <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-          <h2 className="text-lg font-semibold">No watched titles yet</h2>
-          <p className="max-w-xs text-zinc-500">
+          <SearchX className="h-[22px] w-[22px] text-muted" strokeWidth={2} aria-hidden="true" />
+          <h2 className="font-display text-[18px] font-semibold tracking-[-0.01em] text-heading">
+            No watched titles yet
+          </h2>
+          <p className="max-w-xs text-[13px] text-secondary">
             Your Plex library synced, but nothing has a confirmed watch yet. Watch something, then
             sync again.
           </p>
           <SyncButton endpoints={["/api/plex/sync"]} />
         </div>
       ) : (
-        <ul className="divide-y divide-zinc-100 dark:divide-zinc-900">
+        // The meta line drops its "Last watched " prefix here: the header
+        // above already frames every date on this screen, and an 11px mono
+        // string has roughly 110px of cell to live in.
+        <ul className="grid grid-cols-3 gap-3 px-4 sm:grid-cols-4">
           {list.map((item) => (
-            <TitleRow
+            <TitleCard
               key={titleKey(item)}
               title={item.title}
               year={item.year}
-              runtime={item.runtime}
               posterPath={item.posterPath}
-              meta={`Last watched ${formatRelativeTime(item.lastWatchedAt)}`}
+              meta={formatRelativeTime(item.lastWatchedAt)}
             />
           ))}
         </ul>

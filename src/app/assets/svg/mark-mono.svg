@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="what2watch">
+  <defs>
+    <mask id="play" maskUnits="userSpaceOnUse" x="14" y="4" width="20" height="40">
+      <rect x="14" y="4" width="20" height="40" fill="#fff"></rect>
+      <path d="M20.6 18.4 L29.2 24 L20.6 29.6 Z" fill="#000"></path>
+    </mask>
+  </defs>
+  <rect x="6" y="16" width="10" height="20" rx="2.5" fill="currentColor" fill-opacity="0.45"></rect>
+  <rect x="32" y="16" width="10" height="20" rx="2.5" fill="currentColor" fill-opacity="0.45"></rect>
+  <rect x="18" y="9" width="12" height="29" rx="3" fill="currentColor" mask="url(#play)"></rect>
+  <circle cx="24" cy="4.6" r="2.2" fill="currentColor" fill-opacity="0.7"></circle>
+</svg>

@@ -14,6 +14,10 @@
 // Apply would have nothing left to do.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import { Button } from "@/components/ui/Button";
+import { Chip } from "@/components/ui/Chip";
+import { IconButton } from "@/components/ui/IconButton";
+import { Sheet } from "@/components/ui/Sheet";
 import {
   filtersReducer,
   hasActiveFilters,
@@ -23,27 +27,10 @@ import {
 import { QUICK_DECADES, QUICK_GENRES, QUICK_RUNTIMES } from "@/lib/ui/modes";
 import { CloseIcon } from "./icons";
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`tap-target shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-        active
-          ? "border-brand bg-brand/10 text-brand dark:bg-brand/20"
-          : "border-zinc-200 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</h3>
+      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-secondary">{label}</h3>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
@@ -158,8 +145,10 @@ export function FilterSheet({
   const dispatch = (action: FilterAction) => setStaged((prev) => filtersReducer(prev, action));
   const stagedHasActive = hasActiveFilters(staged);
 
-  // Portaled to document.body rather than rendered in place: this sheet is
-  // `fixed inset-0`, but DecideScreen renders it inside a <main
+  // Portaled to document.body rather than rendered in place: the Sheet shell
+  // this renders (src/components/ui/Sheet.tsx — visual only; every hook and
+  // handler stays in this file) is `fixed inset-0`, but DecideScreen renders
+  // this component inside a <main
   // className="... animate-content-in"> — and animate-content-in applies a
   // CSS transform. Per spec, a transformed ancestor becomes the containing
   // block for a `position: fixed` descendant, so without the portal this
@@ -172,98 +161,72 @@ export function FilterSheet({
   if (!mounted) return null;
 
   return createPortal(
-    <div className={`fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`} inert={!open}>
-      {/* Backdrop */}
-      <div
-        onClick={onClose}
-        aria-hidden="true"
-        className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ${
-          open ? "opacity-100" : "opacity-0"
-        }`}
-      />
-
-      {/* Sheet */}
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Filters"
-        className={`absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-xl bg-white shadow-lg transition-transform duration-200 dark:bg-zinc-950 ${
-          open ? "translate-y-0" : "translate-y-full"
-        }`}
-      >
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-base font-semibold">Filters</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close filters"
-            className="tap-target -mr-2 flex items-center justify-center rounded-md text-zinc-500 dark:text-zinc-400"
-          >
-            <CloseIcon className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-5 overflow-y-auto px-4 py-4">
-          <Section label="Runtime">
-            {QUICK_RUNTIMES.map((option) => (
-              <Chip
-                key={option.label}
-                active={staged.maxRuntimeMinutes === option.minutes}
-                onClick={() => dispatch({ type: "SET_MAX_RUNTIME", minutes: option.minutes })}
-              >
-                {option.label}
-              </Chip>
-            ))}
-          </Section>
-
-          <Section label="Decade">
-            {QUICK_DECADES.map((option) => (
-              <Chip
-                key={option.label}
-                active={staged.decade === option.decade}
-                onClick={() => dispatch({ type: "SET_DECADE", decade: option.decade })}
-              >
-                {option.label}
-              </Chip>
-            ))}
-          </Section>
-
-          <Section label="Genre">
-            <Chip active={staged.genre === null} onClick={() => dispatch({ type: "SET_GENRE", genre: null })}>
-              Any genre
-            </Chip>
-            {QUICK_GENRES.map((genre) => (
-              <Chip
-                key={genre}
-                active={staged.genre === genre}
-                onClick={() => dispatch({ type: "SET_GENRE", genre: staged.genre === genre ? null : genre })}
-              >
-                {genre}
-              </Chip>
-            ))}
-          </Section>
-        </div>
-
-        <div className="safe-area-bottom flex gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <button
-            type="button"
+    <Sheet
+      open={open}
+      onClose={onClose}
+      label="Filters"
+      title="Filters"
+      dialogRef={dialogRef}
+      headerAction={
+        <IconButton onClick={onClose} aria-label="Close filters" className="-mr-2">
+          <CloseIcon className="h-5 w-5" strokeWidth={2} />
+        </IconButton>
+      }
+      footer={
+        <>
+          <Button
             onClick={() => dispatch({ type: "RESET" })}
             disabled={!stagedHasActive}
-            className="tap-target flex-1 rounded-md border border-zinc-300 py-2.5 text-sm font-medium disabled:opacity-40 dark:border-zinc-700"
+            variant="secondary"
+            className="flex-1"
           >
             Reset
-          </button>
-          <button
-            type="button"
-            onClick={() => onApply(staged)}
-            className="tap-target flex-1 rounded-md bg-brand py-2.5 text-sm font-semibold text-brand-foreground"
-          >
+          </Button>
+          <Button onClick={() => onApply(staged)} variant="primary" className="flex-1">
             Apply
-          </button>
-        </div>
-      </div>
-    </div>,
+          </Button>
+        </>
+      }
+    >
+      <Section label="Runtime">
+        {QUICK_RUNTIMES.map((option) => (
+          <Chip
+            key={option.label}
+            active={staged.maxRuntimeMinutes === option.minutes}
+            onClick={() => dispatch({ type: "SET_MAX_RUNTIME", minutes: option.minutes })}
+          >
+            {option.label}
+          </Chip>
+        ))}
+      </Section>
+
+      <Section label="Decade">
+        {QUICK_DECADES.map((option) => (
+          <Chip
+            key={option.label}
+            active={staged.decade === option.decade}
+            onClick={() => dispatch({ type: "SET_DECADE", decade: option.decade })}
+          >
+            {option.label}
+          </Chip>
+        ))}
+      </Section>
+
+      <Section label="Genre">
+        <Chip active={staged.genre === null} onClick={() => dispatch({ type: "SET_GENRE", genre: null })}>
+          Any genre
+        </Chip>
+        {QUICK_GENRES.map((genre) => (
+          <Chip
+            key={genre}
+            active={staged.genre === genre}
+            onClick={() => dispatch({ type: "SET_GENRE", genre: staged.genre === genre ? null : genre })}
+          >
+            {genre}
+          </Chip>
+        ))}
+      </Section>
+    </Sheet>,
     document.body,
   );
 }

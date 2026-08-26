@@ -7,24 +7,24 @@
 //
 // The header below is a byte-for-byte copy of RewatchPage's — it's static
 // text, not data-derived, so there's nothing to skeletonize there and no
-// flash when the real header mounts in its place. The rows use
-// SkeletonTitleRow, which mirrors TitleRow's exact box sizes, so the real
-// list swaps in with zero layout shift.
-import { SkeletonTitleRow } from "@/components/SkeletonTitleRow";
+// flash when the real header mounts in its place. The cells use
+// SkeletonTitleCard, which mirrors TitleCard's exact box sizes, so the real
+// grid swaps in with zero layout shift.
+import { SkeletonTitleCard } from "@/components/SkeletonTitleCard";
 
-const SKELETON_ROW_COUNT = 6;
+const SKELETON_CELL_COUNT = 9;
 
 export default function RewatchLoading() {
   return (
     <main className="min-h-screen-dvh pb-6">
-      <header className="px-4 pt-6 pb-2">
-        <h1 className="text-xl font-semibold">Rewatch</h1>
-        <p className="text-sm text-zinc-500">Sorted by how long it&apos;s been since you last watched.</p>
+      <header className="px-4 pt-6 pb-3">
+        <h1 className="font-display text-[22px] font-semibold tracking-[-0.02em] text-heading">Rewatch</h1>
+        <p className="text-[13px] text-secondary">Sorted by how long it&apos;s been since you last watched.</p>
       </header>
 
-      <ul className="divide-y divide-zinc-100 dark:divide-zinc-900">
-        {Array.from({ length: SKELETON_ROW_COUNT }, (_, i) => (
-          <SkeletonTitleRow key={i} />
+      <ul className="grid grid-cols-3 gap-3 px-4 sm:grid-cols-4">
+        {Array.from({ length: SKELETON_CELL_COUNT }, (_, i) => (
+          <SkeletonTitleCard key={i} />
         ))}
       </ul>
     </main>

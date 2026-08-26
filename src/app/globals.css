@@ -1,34 +1,151 @@
 @import "tailwindcss";
+/* The Comet design system, vendored verbatim — every colour, radius, shadow
+   and duration in this app resolves to a token defined there. That file is
+   the single place a brand colour is defined (it replaces the old one-off
+   --brand/--brand-foreground pair that used to live here and had to be kept
+   in sync by hand with manifest.ts and the generated icon artwork).
+   manifest.ts and layout.tsx's `viewport` still carry literal hex values
+   because the browser reads those out of a JSON manifest / <meta> tag before
+   any CSS exists — they are commented there to point back at the token they
+   mirror. */
+@import "../styles/comet/tokens.css";
 
+/* Two values the design spec uses that aren't in the token file, named here
+   rather than inlined so no raw colour ever lands in a className:
+   --scrim      the bottom sheet's backdrop
+   --hairline-inset  the 1px inner edge that keeps poster artwork from
+                     bleeding into the void it floats on */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  /* Matches manifest.ts's theme_color/background_color and the generated
-     icon artwork (public/icons) — one brand color defined once. */
-  --brand: #4f46e5;
-  --brand-foreground: #ffffff;
+  --scrim: rgba(8, 5, 14, 0.62);
+  --hairline-inset: rgba(242, 237, 248, 0.08);
 }
 
+/* Maps the semantic tokens into Tailwind v4's theme so utilities exist for
+   them (bg-card, text-accent, border-line, ...). `inline` matters: it makes
+   Tailwind substitute the var() reference into each utility instead of
+   re-emitting these names into :root, which would shadow tokens.css. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-brand: var(--brand);
-  --color-brand-foreground: var(--brand-foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-void: var(--color-bg-sunken);
+  --color-app: var(--color-bg);
+  --color-card: var(--surface-card);
+  --color-elevated: var(--surface-elevated);
+  --color-hover: var(--surface-hover);
+  --color-active: var(--surface-active);
+  --color-inset: var(--surface-inset);
+  --color-line: var(--border);
+  --color-line-soft: var(--border-soft);
+  --color-line-strong: var(--border-strong);
+  --color-heading: var(--text-heading);
+  --color-body: var(--text-body);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-disabled: var(--text-disabled);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-soft: var(--accent-soft);
+  --color-glow: var(--glow);
+  --color-glow-contrast: var(--glow-contrast);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --font-display: var(--font-bricolage), system-ui, sans-serif;
+  --font-sans: var(--font-hanken), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --radius-DEFAULT: 10px;
+  --ease-out: var(--ease-out);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* 14px is Comet's base — it runs dense on purpose.
+   overflow-x: hidden is a safety net, not the fix: horizontal scroll on a
+   phone makes the whole app feel broken (you swipe to skip a film and the
+   page slides sideways instead), so nothing may side-scroll. Individual
+   overflow-x-auto containers were removed rather than relied on being
+   clipped here — this only catches a future regression. */
+html {
+  overflow-x: hidden;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg);
+  color: var(--text-body);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--selection-bg);
+}
+
+/* Focus is a 2px violet ring offset by a 2px gap in the app background, on
+   :focus-visible only — so it shows for keyboard/AT users without drawing a
+   box around every tapped button on a phone. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* Prose and headings break onto balanced lines instead of leaving a single
+   orphaned word — cheap, and it matters most on the narrow mobile column
+   this whole app is designed around. */
+p,
+h1,
+h2,
+h3,
+h4 {
+  text-wrap: pretty;
+}
+
+/* Comet's elevation scale, applied directly rather than through Tailwind's
+   shadow-* utilities. Tailwind v4 rebuilds shadow utilities at compile time
+   so it can splice --tw-shadow-color into them, which it cannot do to an
+   opaque var() reference — the theme entry alone doesn't reliably survive
+   that. These classes sidestep it entirely. */
+.shadow-comet-sm {
+  box-shadow: var(--shadow-sm);
+}
+.shadow-comet-md {
+  box-shadow: var(--shadow-md);
+}
+.shadow-comet-lg {
+  box-shadow: var(--shadow-lg);
+}
+.shadow-comet-xl {
+  box-shadow: var(--shadow-xl);
+}
+/* The single coral element in the app — Decide's "Watch this". */
+.shadow-comet-glow {
+  box-shadow: var(--glow-coral);
+}
+
+/* Full-bleed aurora wash. Fixed and non-interactive, so it sits behind the
+   whole viewport without ever eating a tap.
+   MUST be rendered outside any element carrying a CSS transform (i.e. NOT
+   inside <main className="animate-content-in">): a transformed ancestor
+   becomes the containing block for its `position: fixed` descendants, which
+   would pin this to the scrolling <main> instead of the viewport. That's the
+   same spec rule that forced FilterSheet.tsx to portal to document.body —
+   see the long comment there.
+
+   z-index: -1 puts it behind sibling and ancestor *content* but still in
+   front of the canvas background. The consequence to watch for: an ancestor
+   that paints its own background (a `bg-*` utility on the wrapping <main>)
+   covers it. That's why the sign-in screen sets no background of its own and
+   uses .aurora-void instead — the wash carries the colour. */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--grad-aurora);
+}
+
+/* Aurora over the sunken void, for the full-bleed sign-in screen. */
+.aurora-void {
+  background-color: var(--color-bg-sunken);
 }
 
 /* Bottom nav sits above the iOS/Android gesture area in standalone PWA mode
@@ -53,6 +170,21 @@ body {
 .min-h-screen-dvh {
   min-height: 100vh;
   min-height: 100dvh;
+}
+
+/* Exactly the space a screen has between the top of the viewport and the
+   bottom nav — the fixed-height counterpart to .min-h-screen-dvh, for
+   screens that must NOT scroll (the Decide screen on mobile).
+   .min-h-screen-dvh alone can't do this job: it sizes to the full viewport
+   while .pb-nav adds the nav's height *on top* via the wrapping element's
+   padding, so the document always ends up ~64px taller than the viewport and
+   scrolls by exactly the nav's height even when nothing overflows. Same
+   4rem + safe-area figure as .pb-nav, subtracted instead of added — keep the
+   two in step. Same vh-then-dvh fallback ordering as .min-h-screen-dvh, and
+   for the same reason. */
+.h-app-screen {
+  height: calc(100vh - 4rem - env(safe-area-inset-bottom));
+  height: calc(100dvh - 4rem - env(safe-area-inset-bottom));
 }
 
 /* Bottom clearance reserved for the fixed bottom nav (BottomNav.tsx), used
@@ -80,7 +212,10 @@ body {
    wait, it isn't a decorative flourish, and a slow animation on a fast page
    reads as slower than no animation at all. Opacity/transform only, so the
    reduced-motion override below can disable the movement without affecting
-   layout. */
+   layout.
+   NOTE the transform: it makes any element carrying this class the
+   containing block for `position: fixed` descendants. See .aurora above and
+   FilterSheet.tsx's portal comment. */
 @keyframes content-in {
   from {
     opacity: 0;
@@ -93,7 +228,7 @@ body {
 }
 
 .animate-content-in {
-  animation: content-in 180ms ease-out both;
+  animation: content-in 180ms var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

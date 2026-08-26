@@ -33,8 +33,14 @@ const CURRENT_CACHES = [SHELL_CACHE, POSTER_CACHE];
 // Same-origin static asset prefixes safe to cache-first: content-hashed
 // Next.js build output, icons, and the manifest never change shape without
 // changing URL.
+// "/favicon.ico" is deliberately absent: there is no app/favicon.ico any
+// more. The brand set (src/app/assets) ships favicon.svg + 32/16px PNGs,
+// declared explicitly in layout.tsx's metadata.icons, and all of those live
+// under the /icons/ prefix below. Next's app/favicon.ico convention
+// auto-injects its own <link rel="icon"> that would have outranked those
+// declarations and kept serving the old indigo mark.
 const STATIC_PREFIXES = ["/_next/static/", "/icons/"];
-const STATIC_EXACT = ["/manifest.webmanifest", "/favicon.ico"];
+const STATIC_EXACT = ["/manifest.webmanifest"];
 
 // TMDB's poster CDN — the only cross-origin host this SW ever caches.
 // Poster paths are immutable once TMDB assigns them, so cache-first is safe

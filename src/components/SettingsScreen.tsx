@@ -13,7 +13,12 @@
 // a page reload mid-sync must not show an idle "Sync now" button while a
 // job is actually still running server-side.
 import { useEffect, useRef, useState } from "react";
+import { Bookmark, Check, Film, LoaderCircle, Tv } from "lucide-react";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { StatCard } from "@/components/ui/StatCard";
 import { postJson } from "@/lib/client/http";
 import { describeSyncPhase, getPlexSyncStatus, IDLE_SYNC_JOB, runPlexSync, type PlexSyncJob } from "@/lib/client/plexSync";
 import {
@@ -25,24 +30,32 @@ import {
 import { useLinkStatus } from "@/lib/client/useLinkStatus";
 
 function ServerBadge({ owned }: { owned: boolean }) {
-  return owned ? (
-    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-      Yours
-    </span>
-  ) : (
-    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
-      Shared with you
-    </span>
-  );
+  // Amber for a server you don't own: it's a caution, not a status. Whose
+  // library you're drawing from changes what every recommendation means.
+  return owned ? <Badge tone="neutral">Yours</Badge> : <Badge tone="warning">Shared with you</Badge>;
 }
 
 function ReachabilityDot({ reachable }: { reachable: boolean }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1 text-[11px] ${reachable ? "text-emerald-600 dark:text-emerald-400" : "text-zinc-400 dark:text-zinc-500"}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${reachable ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-600"}`} />
+    <span className={`inline-flex items-center gap-1.5 text-[11px] ${reachable ? "text-positive" : "text-muted"}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${reachable ? "bg-positive" : "bg-[color:var(--text-muted)]"}`} />
       {reachable ? "Reachable" : "Unreachable"}
+    </span>
+  );
+}
+
+/** Custom checkbox. The real <input> stays in the DOM (sr-only) so the label
+ *  association, keyboard toggle, and screen-reader semantics are the
+ *  browser's, not ours — only the box is drawn by hand. */
+function CheckboxBox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] border transition-colors duration-[180ms] ease-out peer-focus-visible:shadow-[var(--ring)] ${
+        checked ? "border-accent bg-accent" : "border-line-strong"
+      }`}
+    >
+      {checked && <Check className="h-3 w-3 text-heading" strokeWidth={3} />}
     </span>
   );
 }
@@ -153,14 +166,14 @@ function PlexServerPicker({
   if (servers.length === 1) {
     const only: PlexServerOption = servers[0];
     return (
-      <div className="flex flex-col gap-1.5 rounded-md border border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+      <div className="flex flex-col gap-1.5 rounded-[10px] border border-line bg-inset px-3 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">{only.name}</span>
+          <span className="text-[13px] font-medium text-body">{only.name}</span>
           <ServerBadge owned={only.owned} />
           <ReachabilityDot reachable={only.reachable} />
         </div>
         {!only.owned && (
-          <p className="text-xs text-amber-700 dark:text-amber-400">
+          <p className="text-xs text-warning">
             This server belongs to someone else&apos;s Plex account — your library, watch history, and
             recommendations will come from their media, not yours.
           </p>
@@ -171,30 +184,31 @@ function PlexServerPicker({
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-secondary">
         Your Plex account can see more than one server. Choose which one(s) to draw media from.
       </p>
       {needsSelection && (
-        <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+        <p className="text-[11px] font-medium text-warning">
           Nothing is selected yet — pick at least one server before syncing.
         </p>
       )}
       <ul className="flex flex-col gap-2">
         {servers.map((s) => (
           <li key={s.machineIdentifier}>
-            <label className="tap-target flex cursor-pointer items-center gap-2.5 rounded-md border border-zinc-200 px-3 py-2.5 text-sm dark:border-zinc-800">
+            <label className="tap-target flex cursor-pointer items-center gap-2.5 rounded-[10px] border border-line bg-card px-3 py-2.5 text-[13px] text-body transition-colors duration-[180ms] ease-out hover:bg-hover">
               <input
                 type="checkbox"
                 checked={pending.has(s.machineIdentifier)}
                 onChange={() => toggle(s.machineIdentifier)}
-                className="h-4 w-4 shrink-0"
+                className="peer sr-only"
               />
+              <CheckboxBox checked={pending.has(s.machineIdentifier)} />
               <span className="flex-1 truncate">{s.name}</span>
               <ServerBadge owned={s.owned} />
               <ReachabilityDot reachable={s.reachable} />
             </label>
             {!s.owned && pending.has(s.machineIdentifier) && (
-              <p className="mt-1 pl-1 text-[11px] text-amber-700 dark:text-amber-400">
+              <p className="mt-1 pl-1 text-[11px] text-warning">
                 Selecting this scans a library someone else owns.
               </p>
             )}
@@ -202,25 +216,20 @@ function PlexServerPicker({
         ))}
       </ul>
       <div className="flex items-center gap-3">
-        <button
-          onClick={handleSave}
-          disabled={saving || !dirty}
-          className="tap-target self-start rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-700"
-        >
+        <Button onClick={handleSave} disabled={saving || !dirty} variant="secondary" className="self-start">
           {saving ? "Saving..." : "Save selection"}
-        </button>
-        {dirty && !saving && <span className="text-xs text-zinc-500">Unsaved changes</span>}
+        </Button>
+        {dirty && !saving && <span className="text-[11px] text-warning">Unsaved changes</span>}
       </div>
-      {saved && !dirty && (
-        <p className="text-xs text-emerald-600 dark:text-emerald-400">
-          Selection saved — sync now to apply it.
-        </p>
-      )}
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {saved && !dirty && <p className="text-xs text-positive">Selection saved — sync now to apply it.</p>}
+      {error && <p className="text-xs text-negative">{error}</p>}
     </div>
   );
 }
 
+// Kept whole and unchanged. Only its failure branch is reached from this
+// screen now — a completed job renders as StatCards plus SyncCaveats below,
+// reading the same fields off the same job object.
 function summarizeSync(job: PlexSyncJob): string {
   if (job.status === "failed") {
     return job.error ?? "Sync failed.";
@@ -233,6 +242,26 @@ function summarizeSync(job: PlexSyncJob): string {
     return `${base} ${job.serversUnreachable} selected ${plural} couldn't be reached and ${job.serversUnreachable === 1 ? "was" : "were"} skipped this time.`;
   }
   return base;
+}
+
+/** The prose that doesn't fit in a StatCard: the discover-pool size, and the
+ *  skipped-server caveat. Same fields, same wording as summarizeSync. */
+function SyncCaveats({ job }: { job: PlexSyncJob }) {
+  const plural = job.serversUnreachable === 1 ? "server" : "servers";
+  return (
+    <div className="flex flex-col gap-1 text-xs text-secondary">
+      <p>
+        <span className="font-mono tabular-nums">{job.libraryItemsSynced ?? 0}</span> unwatched library items
+        are now available to discover.
+      </p>
+      {job.serversUnreachable ? (
+        <p className="text-warning">
+          <span className="font-mono tabular-nums">{job.serversUnreachable}</span> selected {plural}{" "}
+          couldn&apos;t be reached and {job.serversUnreachable === 1 ? "was" : "were"} skipped this time.
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function PlexSection() {
@@ -277,14 +306,18 @@ function PlexSection() {
   const syncing = job.status === "running";
 
   return (
-    <section className="border-t border-zinc-200 px-4 py-6 dark:border-zinc-800">
-      <h2 className="mb-1 text-base font-semibold">Plex</h2>
-
+    <Card header={<CardHeader title="Plex" sub="How you signed in — and where your media comes from." />}>
       {loading ? (
-        <p className="text-sm text-zinc-500">Checking...</p>
+        <p className="text-[13px] text-secondary">Checking...</p>
       ) : (
         <div className="flex flex-col gap-3">
-          <p className="text-xs text-zinc-500">
+          <p className="flex items-center gap-2 text-xs text-secondary">
+            <span
+              aria-hidden="true"
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                plex && plex.linked && plex.hasConnection ? "bg-positive" : "bg-[color:var(--text-muted)]"
+              }`}
+            />
             {plex && plex.linked && plex.hasConnection
               ? "A working connection to your server has been found."
               : "No server connection has been confirmed yet — try syncing."}
@@ -294,22 +327,38 @@ function PlexSection() {
             onSelectionSaved={refetch}
             onNeedsSelectionChange={setNeedsServerSelection}
           />
-          <button
+          <Button
             onClick={handleSync}
             disabled={syncing || needsServerSelection}
-            className="tap-target self-start rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-700"
+            variant="primary"
+            className="self-start"
           >
             {syncing ? "Syncing..." : "Sync now"}
-          </button>
-          {syncing && <p className="text-xs text-zinc-500">{describeSyncPhase(job)}</p>}
-          {(job.status === "completed" || job.status === "failed") && (
-            <p className={`text-xs ${job.status === "failed" ? "text-red-600 dark:text-red-400" : "text-zinc-500"}`}>
-              {summarizeSync(job)}
+          </Button>
+          {syncing && (
+            <p className="flex items-center gap-2 text-xs text-secondary">
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" strokeWidth={2} aria-hidden="true" />
+              {describeSyncPhase(job)}
             </p>
+          )}
+          {job.status === "failed" && <p className="text-xs text-negative">{summarizeSync(job)}</p>}
+          {job.status === "completed" && (
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-2">
+                <StatCard label="Movies" value={job.moviesSynced ?? 0} icon={<Film className="h-4 w-4" />} />
+                <StatCard label="Shows" value={job.showsSynced ?? 0} icon={<Tv className="h-4 w-4" />} />
+                <StatCard
+                  label="Watchlist"
+                  value={job.watchlistSynced ?? 0}
+                  icon={<Bookmark className="h-4 w-4" />}
+                />
+              </div>
+              <SyncCaveats job={job} />
+            </div>
           )}
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -359,38 +408,28 @@ function LetterboxdSection() {
   const linked = letterboxd?.linked ?? false;
 
   return (
-    <section className="border-t border-zinc-200 px-4 py-6 dark:border-zinc-800">
-      <h2 className="mb-1 text-base font-semibold">Letterboxd</h2>
-
+    <Card header={<CardHeader title="Letterboxd" sub="Your diary and ratings, read from the public RSS feed." />}>
       {loading ? (
-        <p className="text-sm text-zinc-500">Checking...</p>
+        <p className="text-[13px] text-secondary">Checking...</p>
       ) : linked && letterboxd?.linked ? (
         <div className="flex flex-col gap-3">
-          <p className="text-sm text-emerald-600 dark:text-emerald-400">Linked as {letterboxd.username}</p>
+          <p className="text-[13px] text-positive">Linked as {letterboxd.username}</p>
           {letterboxd.lastError && (
-            <p className="text-xs text-red-600 dark:text-red-400">Last sync error: {letterboxd.lastError}</p>
+            <p className="text-xs text-negative">Last sync error: {letterboxd.lastError}</p>
           )}
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="tap-target rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-700"
-            >
+            <Button onClick={handleSync} disabled={syncing} variant="secondary">
               {syncing ? "Syncing..." : "Sync now"}
-            </button>
-            <button
-              onClick={handleUnlink}
-              disabled={unlinking}
-              className="tap-target rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-700"
-            >
+            </Button>
+            <Button onClick={handleUnlink} disabled={unlinking} variant="secondary">
               {unlinking ? "Unlinking..." : "Unlink"}
-            </button>
+            </Button>
           </div>
-          {syncMessage && <p className="text-xs text-zinc-500">{syncMessage}</p>}
+          {syncMessage && <p className="text-xs text-secondary">{syncMessage}</p>}
         </div>
       ) : (
         <form onSubmit={handleLink} className="flex flex-col gap-2">
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-secondary">
             Reads your public diary via RSS — no password needed, just your username.
           </p>
           <div className="flex max-w-xs gap-2">
@@ -399,34 +438,35 @@ function LetterboxdSection() {
               onChange={(e) => setUsername(e.target.value)}
               placeholder="letterboxd username"
               required
-              className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-2 text-base outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
+              // text-base (16px) rather than the 13px this card otherwise
+              // uses: iOS Safari zooms the whole page when a focused input's
+              // font-size is under 16px, and that zoom doesn't undo itself.
+              className="h-[38px] min-w-0 flex-1 rounded-[10px] border border-line bg-inset px-3 text-base text-body outline-none transition-colors duration-[180ms] ease-out placeholder:text-muted focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
             />
-            <button
-              type="submit"
-              disabled={submitting}
-              className="tap-target rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-foreground disabled:opacity-50"
-            >
+            <Button type="submit" disabled={submitting} variant="primary">
               {submitting ? "Linking..." : "Link"}
-            </button>
+            </Button>
           </div>
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && <p className="text-[13px] text-negative">{error}</p>}
         </form>
       )}
-    </section>
+    </Card>
   );
 }
 
 export function SettingsScreen({ username }: { username: string }) {
   return (
     <main className="min-h-screen-dvh pb-6 animate-content-in">
-      <header className="px-4 pt-6 pb-2">
-        <h1 className="text-xl font-semibold">Settings</h1>
-        <p className="text-sm text-zinc-500">Signed in as {username}</p>
+      <header className="px-4 pt-6 pb-3">
+        <h1 className="font-display text-[22px] font-semibold tracking-[-0.02em] text-heading">Settings</h1>
+        <p className="text-[13px] text-secondary">Signed in as {username}</p>
       </header>
 
-      <PlexSection />
-      <LetterboxdSection />
-      <DeleteAccountSection username={username} />
+      <div className="flex flex-col gap-4 px-4">
+        <PlexSection />
+        <LetterboxdSection />
+        <DeleteAccountSection username={username} />
+      </div>
     </main>
   );
 }

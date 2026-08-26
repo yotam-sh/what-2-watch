@@ -16,6 +16,9 @@
 // cause a confusing failed first run.
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Info } from "lucide-react";
+import { Button, buttonClasses } from "@/components/ui/Button";
+import { Wordmark } from "@/components/ui/Wordmark";
 import { postJson } from "@/lib/client/http";
 import {
   INITIAL_PIN_FLOW_STATE,
@@ -172,29 +175,28 @@ export function PlexSignInCard() {
   }
 
   return (
-    <div className="flex w-full max-w-sm flex-col items-center gap-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-8 text-center shadow-2xl">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">what-to-watch</h1>
-        <p className="mt-2 text-sm text-zinc-400">
+    <div className="flex w-full max-w-sm flex-col items-center gap-6 rounded-[16px] border border-line bg-card p-8 text-center shadow-comet-xl">
+      <div className="flex flex-col items-center gap-3">
+        <Wordmark size="lg" />
+        <p className="text-sm text-secondary">
           Pulls your Plex + Letterboxd history and picks tonight&apos;s movie or show.
         </p>
       </div>
 
       <div className="flex w-full flex-col items-center gap-3">
+        {/* Violet, not coral: coral is reserved for Decide's "Watch this" and
+            appears exactly once in the whole app. */}
         {(pinState.status === "idle" || pinState.status === "error" || pinState.status === "expired") && (
-          <button
-            onClick={handleStart}
-            className="tap-target w-full rounded-md bg-brand px-6 py-3 text-base font-semibold text-brand-foreground"
-          >
+          <Button onClick={handleStart} variant="primary" size="lg" className="w-full">
             Sign in with Plex
-          </button>
+          </Button>
         )}
 
-        {pinState.status === "starting" && <p className="text-sm text-zinc-400">Starting...</p>}
+        {pinState.status === "starting" && <p className="text-sm text-secondary">Starting...</p>}
 
         {isPolling(pinState) && (
-          <div className="flex w-full flex-col gap-3 rounded-md border border-zinc-700 p-4">
-            <p className="text-sm text-zinc-300">
+          <div className="flex w-full flex-col gap-3 rounded-[10px] border border-line bg-inset p-4">
+            <p className="text-[13px] text-body">
               {pinState.popupBlocked
                 ? "Your browser blocked the Plex sign-in popup. Use the link below instead — this page will pick it up automatically once you finish."
                 : "A Plex sign-in window has opened. Log in and authorize this app there — this page will pick it up automatically."}
@@ -204,39 +206,48 @@ export function PlexSignInCard() {
                 href={pinState.authUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="tap-target rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-brand-foreground"
+                className={buttonClasses({ variant: "primary" })}
               >
                 Open Plex to authorize
               </a>
             )}
-            <p className="text-xs text-zinc-500">
-              Waiting for you to finish... expires in {formatMinutesSeconds(remainingMs(pinState, nowTick) ?? 0)}
+            <p className="text-xs text-secondary">
+              Waiting for you to finish... expires in{" "}
+              <span className="font-mono tabular-nums">
+                {formatMinutesSeconds(remainingMs(pinState, nowTick) ?? 0)}
+              </span>
             </p>
           </div>
         )}
 
         {pinState.status === "linked" && (
-          <p className="text-sm text-emerald-400">Signed in! Loading your account...</p>
+          <p className="text-sm text-positive">Signed in! Loading your account...</p>
         )}
 
         {pinState.status === "expired" && (
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-secondary">
             That sign-in expired before you finished — no harm done, just try again.
           </p>
         )}
 
-        {pinState.status === "error" && <p className="text-sm text-red-400">{pinState.message}</p>}
+        {pinState.status === "error" && <p className="text-sm text-negative">{pinState.message}</p>}
       </div>
 
-      <ul className="w-full list-disc space-y-1.5 pl-5 text-left text-xs text-zinc-500">
-        <li>
-          Plex <strong className="text-zinc-400">managed/Home users cannot sign in</strong> — they have
-          no plex.tv account of their own. If that&apos;s you, ask the account owner to create you a
-          real Plex account instead.
+      <ul className="flex w-full flex-col gap-3 text-left text-xs text-secondary">
+        <li className="flex gap-2.5">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+          <span>
+            Plex <strong className="font-semibold text-body">managed/Home users cannot sign in</strong> — they
+            have no plex.tv account of their own. If that&apos;s you, ask the account owner to create you a
+            real Plex account instead.
+          </span>
         </li>
-        <li>
-          <strong className="text-zinc-400">Each household member signs in with their own Plex account</strong> —
-          watch state is tied to your personal token, not the server.
+        <li className="flex gap-2.5">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+          <span>
+            <strong className="font-semibold text-body">Each household member signs in with their own Plex account</strong>{" "}
+            — watch state is tied to your personal token, not the server.
+          </span>
         </li>
       </ul>
     </div>

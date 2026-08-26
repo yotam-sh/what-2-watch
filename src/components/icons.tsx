@@ -1,110 +1,27 @@
-// Small hand-rolled stroke icon set for the bottom nav — no icon package is
-// installed in this project, and pulling one in for five glyphs isn't worth
-// the dependency. Deliberately simple shapes (circles/rects/lines) rather
-// than detailed paths, consistent 24x24 viewBox, currentColor stroke so they
-// pick up text color (and therefore the active/inactive tab styling) for
-// free.
-import type { SVGProps } from "react";
-
-function Icon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      {...props}
-    />
-  );
-}
-
-/** Decide — a die face, since the roll is the headline feature. */
-export function DiceIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
-      <circle cx="8.3" cy="8.3" r="1.1" fill="currentColor" stroke="none" />
-      <circle cx="15.7" cy="8.3" r="1.1" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
-      <circle cx="8.3" cy="15.7" r="1.1" fill="currentColor" stroke="none" />
-      <circle cx="15.7" cy="15.7" r="1.1" fill="currentColor" stroke="none" />
-    </Icon>
-  );
-}
-
-/** Rewatch — a clock with a back-pointing sweep, standing in for "history". */
-export function HistoryIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <path d="M3.5 9a8.5 8.5 0 1 1-1.2 5.5" />
-      <path d="M2 5v4h4" />
-      <path d="M12 8v4l3 2" />
-    </Icon>
-  );
-}
-
-/** Watchlist — a bookmark. */
-export function BookmarkIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4.2L5 21V4.5a1 1 0 0 1 1-1Z" />
-    </Icon>
-  );
-}
-
-/** Continue — a play button in a circle. */
-export function PlayCircleIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M10 8.5l6 3.5-6 3.5v-7Z" fill="currentColor" stroke="none" />
-    </Icon>
-  );
-}
-
-/** Settings — three sliders, simpler and more legible at nav-icon size than
- *  a detailed gear. */
-export function SlidersIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <circle cx="9" cy="6" r="2" fill="currentColor" stroke="none" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
-      <line x1="4" y1="18" x2="20" y2="18" />
-      <circle cx="11" cy="18" r="2" fill="currentColor" stroke="none" />
-    </Icon>
-  );
-}
-
-/** Filters — a funnel, standing in for narrowing-down. Distinct from
- *  SlidersIcon (used by the Settings tab) so the Decide screen's "Filters"
- *  button doesn't read as a link to Settings. */
-export function FilterIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <path d="M4 5h16l-6 7.5V19l-4 2v-8.5L4 5Z" />
-    </Icon>
-  );
-}
-
-/** Close — a plain X, used by the filter sheet's dismiss control. */
-export function CloseIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <line x1="6" y1="6" x2="18" y2="18" />
-      <line x1="18" y1="6" x2="6" y2="18" />
-    </Icon>
-  );
-}
-
-export function SpinnerIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props} className={`animate-spin ${props.className ?? ""}`}>
-      <path d="M12 3a9 9 0 1 0 9 9" />
-    </Icon>
-  );
-}
+// Icon layer for the app. This used to be a hand-rolled stroke set — five
+// glyphs weren't worth a dependency. The Comet re-skin changed that
+// arithmetic: it needs a couple of dozen glyphs (empty-state illustrations,
+// status markers, the checkbox tick, the offline screen), all at a
+// consistent 2px stroke weight, which is exactly what Lucide is. Rather than
+// rewrite every import site, this file stays as the single icon entry point
+// and just re-exports Lucide under the names the app already uses.
+//
+// Anything not aliased here is imported straight from "lucide-react" at its
+// own call site — this list is only for the glyphs that predate the switch.
+//
+// NOTE: Lucide's `History` was renamed `RotateCcwClock` in lucide-react v1;
+// the old name no longer resolves and is not aliased by the package.
+//
+// NOTE: SpinnerIcon no longer spins by itself. The old hand-rolled component
+// baked `animate-spin` into its own className; Lucide's LoaderCircle is just
+// a static glyph, so every call site adds `animate-spin` explicitly.
+export {
+  Dices as DiceIcon,
+  RotateCcwClock as HistoryIcon,
+  Bookmark as BookmarkIcon,
+  CirclePlay as PlayCircleIcon,
+  SlidersHorizontal as SlidersIcon,
+  Funnel as FilterIcon,
+  X as CloseIcon,
+  LoaderCircle as SpinnerIcon,
+} from "lucide-react";

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-label="what2watch">
+  <defs>
+    <linearGradient id="mid" x1="19" y1="38" x2="29" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7338e8"></stop>
+      <stop offset="1" stop-color="#b9a3fb"></stop>
+    </linearGradient>
+    <radialGradient id="au1" cx="0.12" cy="-0.10" r="1.15">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.20"></stop>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"></stop>
+    </radialGradient>
+    <radialGradient id="au2" cx="1" cy="0" r="1.15">
+      <stop offset="0" stop-color="#ff9d6b" stop-opacity="0.12"></stop>
+      <stop offset="1" stop-color="#ff9d6b" stop-opacity="0"></stop>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="115.2" fill="#15111d"></rect>
+  <rect width="512" height="512" rx="115.2" fill="url(#au1)"></rect>
+  <rect width="512" height="512" rx="115.2" fill="url(#au2)"></rect>
+  <g transform="translate(97.3 97.3) scale(6.6125)">
+    <rect x="7" y="16" width="9.5" height="20" rx="2.5" fill="#3a3050"></rect>
+    <rect x="31.5" y="16" width="9.5" height="20" rx="2.5" fill="#3a3050"></rect>
+    <rect x="18.5" y="10" width="11" height="28" rx="3" fill="url(#mid)"></rect>
+    <circle cx="24" cy="24" r="4.6" fill="#100d16" fill-opacity="0.55"></circle>
+    <path d="M22.2 21.4 L26.8 24 L22.2 26.6 Z" fill="#f2edf8"></path>
+    <circle cx="24" cy="5" r="2.2" fill="#ff9d6b"></circle>
+  </g>
+</svg>

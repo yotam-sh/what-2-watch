@@ -14,6 +14,7 @@
 // POST.
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { postJson } from "@/lib/client/http";
 import { describeSyncPhase, getPlexSyncStatus, pollPlexSyncUntilSettled, runPlexSync } from "@/lib/client/plexSync";
 
@@ -79,15 +80,11 @@ export function SyncButton({ endpoints, label = "Sync now" }: { endpoints: strin
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <button
-        onClick={handleClick}
-        disabled={loading}
-        className="tap-target rounded-md border border-zinc-300 px-5 py-2.5 font-medium disabled:opacity-50 dark:border-zinc-700"
-      >
+      <Button onClick={handleClick} disabled={loading} variant="secondary">
         {loading ? "Syncing..." : label}
-      </button>
-      {loading && progress && <p className="max-w-xs text-center text-xs text-zinc-500">{progress}</p>}
-      {error && <p className="max-w-xs text-center text-sm text-red-600 dark:text-red-400">{error}</p>}
+      </Button>
+      {loading && progress && <p className="max-w-xs text-center text-xs text-secondary">{progress}</p>}
+      {error && <p className="max-w-xs text-center text-[13px] text-negative">{error}</p>}
     </div>
   );
 }

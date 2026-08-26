@@ -10,6 +10,7 @@
 // Plex-style path) or 502 (wrong server entirely) — the two systems don't
 // share a URL shape. Sourcing straight from image.tmdb.org is both correct
 // and simpler, and doubles as the thing sw.js's POSTER_CACHE cache-firsts.
+import { Film } from "lucide-react";
 import type { ImgHTMLAttributes } from "react";
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w342";
@@ -23,9 +24,10 @@ export function PosterImage({ posterPath, title, className, ...rest }: PosterIma
   if (!posterPath) {
     return (
       <div
-        className={`flex items-center justify-center bg-zinc-200 p-3 text-center text-sm font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 ${className ?? ""}`}
+        className={`flex flex-col items-center justify-center gap-2 bg-elevated p-3 text-center ${className ?? ""}`}
       >
-        {title}
+        <Film className="h-5 w-5 shrink-0 text-muted" strokeWidth={2} aria-hidden="true" />
+        <span className="text-xs text-secondary">{title}</span>
       </div>
     );
   }
