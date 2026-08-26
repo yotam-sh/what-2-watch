@@ -19,7 +19,12 @@ export function AppChrome({ hasUser, children }: { hasUser: boolean; children: R
 
   return (
     <>
-      <div className={showNav ? "pb-nav" : undefined}>{children}</div>
+      {/* pt-safe is the mirror of pb-nav: installed as a PWA the web view
+          runs edge to edge under the status bar (black-translucent +
+          viewport-fit=cover), so without this the header sits under the
+          notch and the page grows taller than the usable area. Zero in a
+          browser tab. */}
+      <div className={showNav ? "pb-nav pt-safe" : "pt-safe"}>{children}</div>
       {showNav && <BottomNav />}
     </>
   );

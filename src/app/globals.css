@@ -66,6 +66,13 @@
    clipped here — this only catches a future regression. */
 html {
   overflow-x: hidden;
+  /* Standalone-PWA fix. In a browser tab the chrome absorbs an over-drag;
+     installed, iOS runs the rubber-band/overscroll machinery instead, and it
+     bids for the same gesture the Decide card is using. While iOS decides
+     whether a drag is a scroll it throttles touchmove delivery — which is
+     why swiping felt fine in the browser and choppy in the installed app on
+     the very same build. `none` takes the page out of that contest. */
+  overscroll-behavior: none;
 }
 
 body {
@@ -74,6 +81,10 @@ body {
   font-family: var(--font-sans);
   font-size: 14px;
   overflow-x: hidden;
+  overscroll-behavior: none;
+  /* No grey flash on tap — it reads as lag on a screen whose whole
+     interaction model is dragging. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 ::selection {
@@ -183,8 +194,20 @@ h4 {
    two in step. Same vh-then-dvh fallback ordering as .min-h-screen-dvh, and
    for the same reason. */
 .h-app-screen {
-  height: calc(100vh - 4rem - env(safe-area-inset-bottom));
-  height: calc(100dvh - 4rem - env(safe-area-inset-bottom));
+  height: calc(100vh - 4rem - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+  height: calc(100dvh - 4rem - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+}
+
+/* Top clearance for the status bar / notch, the mirror of .pb-nav. Only
+   non-zero in a standalone PWA: metadata's statusBarStyle is
+   black-translucent and the viewport is viewport-fit=cover, so the web view
+   starts at y=0 *underneath* the status bar. In a browser tab the inset is 0
+   because the browser's own chrome already occupies that strip — which is
+   exactly why the notch overlap, and the overflow it caused, only ever
+   showed up in the installed app. Paired with .h-app-screen, which subtracts
+   the same inset so a no-scroll screen still adds up to one viewport. */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
 }
 
 /* Bottom clearance reserved for the fixed bottom nav (BottomNav.tsx), used

@@ -31,6 +31,7 @@ import { FilterButton } from "./FilterButton";
 import { FilterSheet } from "./FilterSheet";
 import { ModeSelector } from "./ModeSelector";
 import { PosterImage } from "./PosterImage";
+import { SwipeTutorial } from "./SwipeTutorial";
 
 interface RecommendedCandidate {
   tmdbId: number;
@@ -254,18 +255,49 @@ export function DecideScreen({ username }: { username: string }) {
       card.style.willChange = "transform";
     }
   }
-  function onTouchMove(e: TouchEvent<HTMLDivElement>) {
-    if (!dragging.current) return;
-    dragXRef.current = e.touches[0]!.clientX - startX.current;
-    dragYRef.current = e.touches[0]!.clientY - startY.current;
-    // Coalesce: touchmove can outpace the display, so record the latest
-    // position every time but repaint only once per frame.
-    if (rafRef.current !== null) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
-      paintDrag(dragXRef.current, dragYRef.current);
-    });
-  }
+  // touchmove is attached natively rather than via React's onTouchMove, and
+  // that is the whole point: React registers touchmove on its root as a
+  // PASSIVE listener, so preventDefault() inside a React onTouchMove handler
+  // is silently ignored. In a browser tab `touch-action: none` on the card
+  // was enough on its own. Installed as a PWA it is not — iOS still runs its
+  // scroll/rubber-band machinery and throttles touchmove delivery while it
+  // works out whether the drag is a scroll, which is what made swiping
+  // choppy in the installed app and nowhere else. A non-passive listener
+  // that calls preventDefault claims the gesture outright.
+  const onNativeTouchMove = useCallback(
+    (e: globalThis.TouchEvent) => {
+      if (!dragging.current) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      if (!touch) return;
+      dragXRef.current = touch.clientX - startX.current;
+      dragYRef.current = touch.clientY - startY.current;
+      // Coalesce: touchmove can outpace the display, so record the latest
+      // position every time but repaint only once per frame.
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        paintDrag(dragXRef.current, dragYRef.current);
+      });
+    },
+    [paintDrag],
+  );
+
+  /** Callback ref: binds the non-passive listener to whichever node is
+   *  currently the card, and unbinds on unmount or when the candidate
+   *  changes. Stable identity, so React doesn't re-bind every render. */
+  const attachCard = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (cardRef.current) {
+        cardRef.current.removeEventListener("touchmove", onNativeTouchMove);
+      }
+      cardRef.current = node;
+      if (node) {
+        node.addEventListener("touchmove", onNativeTouchMove, { passive: false });
+      }
+    },
+    [onNativeTouchMove],
+  );
   function onTouchEnd() {
     if (!dragging.current) return;
     dragging.current = false;
@@ -349,6 +381,11 @@ export function DecideScreen({ username }: { username: string }) {
         returnFocusRef={filterButtonRef}
       />
 
+      {/* Gated on there actually being a card to swipe: explaining the
+          gesture over an empty state or a spinner teaches nothing and burns
+          the one time this ever shows. */}
+      {viewState.kind === "results" && candidate && verdict === null && <SwipeTutorial />}
+
       {viewState.kind !== "results" ? (
         <DecideEmptyState
           state={viewState}
@@ -377,9 +414,8 @@ export function DecideScreen({ username }: { username: string }) {
               and the swipe hint off the bottom. */}
           <div className="flex min-h-0 w-full flex-1 items-center justify-center">
             <div
-              ref={cardRef}
+              ref={attachCard}
               onTouchStart={onTouchStart}
-              onTouchMove={onTouchMove}
               onTouchEnd={onTouchEnd}
               onTouchCancel={onTouchEnd}
               // touch-none, not touch-pan-y: pan-y hands vertical gestures to
