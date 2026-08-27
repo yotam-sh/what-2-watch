@@ -58,29 +58,37 @@
   --ease-out: var(--ease-out);
 }
 
-/* 14px is Comet's base — it runs dense on purpose.
-   overflow-x: hidden is a safety net, not the fix: horizontal scroll on a
-   phone makes the whole app feel broken (you swipe to skip a film and the
-   page slides sideways instead), so nothing may side-scroll. Individual
-   overflow-x-auto containers were removed rather than relied on being
-   clipped here — this only catches a future regression. */
+/* DO NOT set overflow-x here. It was briefly set to `hidden` on both html
+   and body as a "nothing may side-scroll" safety net, and it broke vertical
+   scrolling outright on Settings, Rewatch and every other long page in the
+   installed PWA.
+   Why: you cannot constrain one overflow axis in isolation. Per CSS Overflow,
+   when one of overflow-x/overflow-y is `visible` and the other is not, the
+   `visible` one computes to `auto` — so `overflow-x: hidden` silently turned
+   overflow-y into `auto`, making <html> (which carries h-full, i.e. a *fixed*
+   height: 100%) a fixed-height scroll container. iOS standalone handles
+   document scrolling specially and that combination stops scrolling
+   altogether. `overflow-x: clip` is not an escape hatch either: it makes the
+   other axis compute to `clip`, which is worse.
+   It was never the real fix anyway — the actual side-scroll fix was deleting
+   the overflow-x-auto container in ModeSelector. Nothing side-scrolls now, so
+   there is nothing to net. */
 html {
-  overflow-x: hidden;
-  /* Standalone-PWA fix. In a browser tab the chrome absorbs an over-drag;
-     installed, iOS runs the rubber-band/overscroll machinery instead, and it
-     bids for the same gesture the Decide card is using. While iOS decides
-     whether a drag is a scroll it throttles touchmove delivery — which is
-     why swiping felt fine in the browser and choppy in the installed app on
-     the very same build. `none` takes the page out of that contest. */
+  /* Standalone-PWA fix, and safe: overscroll-behavior only suppresses the
+     bounce and scroll-chaining, it does not create a scroll container and
+     does not stop scrolling. In a browser tab the chrome absorbs an
+     over-drag; installed, iOS runs the rubber-band machinery instead and it
+     bids for the same gesture the Decide card is using, throttling touchmove
+     delivery while it decides whether the drag is a scroll. */
   overscroll-behavior: none;
 }
 
+/* 14px is Comet's base — it runs dense on purpose. */
 body {
   background: var(--color-bg);
   color: var(--text-body);
   font-family: var(--font-sans);
   font-size: 14px;
-  overflow-x: hidden;
   overscroll-behavior: none;
   /* No grey flash on tap — it reads as lag on a screen whose whole
      interaction model is dragging. */
