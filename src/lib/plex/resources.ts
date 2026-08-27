@@ -147,6 +147,60 @@ export async function getPlexServers(
 /** Test-only escape hatch — production code never needs to reset this. */
 export function _clearResourceCache(): void {
   resourceCache.clear();
+  deviceCache.clear();
+}
+
+// ---- account device registry ----------------------------------------------
+//
+// Every device this account has ever signed in on. Distinct from /resources
+// above, which lists what the account can *access* (servers) — this is the
+// registry of devices, including players and controllers.
+//
+// It exists here for ONE purpose: ownership. A PMS's /clients endpoint is
+// server-scoped, so on a shared server every household member sees every
+// announced client — including other people's phones and televisions.
+// /clients carries no user field to filter on, so the only way to answer
+// "is this device mine" is to intersect it with the asking account's own
+// device registry.
+//
+// DO NOT filter this list by `provides`. It is tempting and it is wrong:
+// the Android TV client that demonstrably accepts playback commands
+// registers here as `provides=controller`, not `player`. Playback capability
+// is decided by /clients' protocolCapabilities; this list decides ownership
+// only.
+
+interface DeviceCacheEntry {
+  identifiers: Set<string>;
+  fetchedAt: number;
+}
+
+const deviceCache = new Map<string, DeviceCacheEntry>();
+
+/** Same 6-hour TTL and same reasoning as the resource cache: plex.tv rate
+ *  limits are undocumented and a hard 429 can need a Plex staff manual
+ *  reset (constraint 10). This is called on every "which devices can I play
+ *  on" request, so it must not hit the network each time. */
+export async function getAccountDeviceIdentifiers(
+  token: string,
+  clientIdentifier: string,
+  opts: { forceRefresh?: boolean } = {},
+): Promise<Set<string>> {
+  const cached = deviceCache.get(clientIdentifier);
+  if (!opts.forceRefresh && cached && Date.now() - cached.fetchedAt < RESOURCE_CACHE_TTL_MS) {
+    return cached.identifiers;
+  }
+
+  const body = await fetchPlexJson(
+    `${PLEX_TV_BASE}/devices`,
+    plexHeaders(clientIdentifier, { "X-Plex-Token": token }),
+  );
+  const identifiers = new Set<string>();
+  for (const d of coerceArray(body as Array<Record<string, unknown>>)) {
+    const id = coerceString(d?.clientIdentifier);
+    if (id) identifiers.add(id);
+  }
+  deviceCache.set(clientIdentifier, { identifiers, fetchedAt: Date.now() });
+  return identifiers;
 }
 
 // ---- connection ordering + selection (pure, unit-tested) ----

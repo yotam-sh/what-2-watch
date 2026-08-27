@@ -38,8 +38,9 @@
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { plexItems } from "@/db/schema";
+import { plexItems, users } from "@/db/schema";
 import { getLinkedServerContexts, type LinkedServerContext } from "./link";
+import { getAccountDeviceIdentifiers } from "./resources";
 import { plexHeaders } from "./headers";
 import { fetchPlexJson } from "./http";
 import { coerceArray } from "./util";
@@ -73,6 +74,9 @@ interface RawSession {
   ratingKey?: string | number;
   viewOffset?: string | number;
   Player?: Array<{ machineIdentifier?: string; state?: string }> | { machineIdentifier?: string; state?: string };
+  /** Present on every session — this is what makes it possible to tell one
+   *  household member's playback from another's. */
+  User?: Array<{ title?: string }> | { title?: string };
 }
 
 function headersFor(ctx: LinkedServerContext): Record<string, string> {
@@ -85,15 +89,42 @@ async function fetchSessions(ctx: LinkedServerContext): Promise<RawSession[]> {
   return coerceArray(container?.Metadata as RawSession[] | RawSession);
 }
 
-/** Every playback-capable client currently announcing itself, across all of
- *  the user's selected servers, annotated with what it's already playing.
+/** Every playback-capable client currently announcing itself that ALSO
+ *  belongs to this user, annotated with what it's already playing.
  *
- *  "Currently announcing" is the operative word: this is a live list, not a
- *  registry. A device that isn't running Plex right now simply isn't here,
- *  which is correct — you cannot cast to a device that's asleep. */
+ *  Two independent filters, and both are load-bearing:
+ *
+ *  AVAILABILITY — /clients is a live list, not a registry. A device that
+ *  isn't running Plex right now simply isn't here, which is correct: you
+ *  cannot cast to a device that's asleep.
+ *
+ *  OWNERSHIP — /clients is scoped to the SERVER, not the user. On a shared
+ *  server it returns every client announced by anyone in the household, and
+ *  carries no user field to filter on, so without the intersection below
+ *  every member saw the server owner's television and wondered whose it was.
+ *  The account device registry (plex.tv, cached 6h) is the only thing that
+ *  can answer "is this device mine".
+ *
+ *  A device the user has never signed in on is therefore invisible to them
+ *  even when it is awake and advertising two feet away — deliberately. */
 export async function listPlayers(userId: string): Promise<PlexPlayer[]> {
   const { contexts } = await getLinkedServerContexts({ id: userId });
   const players: PlexPlayer[] = [];
+  if (contexts.length === 0) return players;
+
+  // Which Plex account is asking — needed to keep another household member's
+  // now-playing title out of this response (see the busy filter below).
+  const account = db.select().from(users).where(eq(users.id, userId)).get();
+  const ownUsername = account?.plexUsername ?? null;
+
+  let ownedDevices: Set<string>;
+  try {
+    ownedDevices = await getAccountDeviceIdentifiers(contexts[0]!.token, contexts[0]!.clientIdentifier);
+  } catch {
+    // Fail CLOSED. If ownership can't be established, showing everything
+    // would leak other people's devices — the exact bug this exists to fix.
+    return players;
+  }
 
   for (const ctx of contexts) {
     let clients: RawClient[] = [];
@@ -111,17 +142,42 @@ export async function listPlayers(userId: string): Promise<PlexPlayer[]> {
     for (const c of clients) {
       if (!c.machineIdentifier) continue;
       if (!(c.protocolCapabilities ?? "").split(",").includes("playback")) continue;
+      if (!ownedDevices.has(c.machineIdentifier)) continue;
 
+      // /status/sessions returns EVERY user's sessions on the server, each
+      // carrying a User. The device is already known to be this user's, but
+      // the session playing on it may not be — Plex itself lets anyone cast
+      // to a device they can see, even though this app no longer does.
+      //
+      // Two things have to hold at once, and they pull in opposite
+      // directions. PRIVACY: never surface the title another household
+      // member is watching. SAFETY: never lose the "already playing" flag,
+      // because that flag is the only thing standing between a tap and
+      // silently hijacking a running film — Plex offers no guard of its own.
+      //
+      // So the flag survives regardless and only the *title* is withheld.
+      // The earlier version dropped the whole session when the user couldn't
+      // be matched, which quietly disarmed the takeover confirm — a worse
+      // failure than the leak it was fixing.
       const session = sessions.find((s) =>
         coerceArray(s.Player).some((p) => p?.machineIdentifier === c.machineIdentifier),
       );
+      const isOwnSession =
+        session !== undefined &&
+        ownUsername !== null &&
+        coerceArray(session.User).some((u) => u?.title === ownUsername);
 
       players.push({
         machineIdentifier: c.machineIdentifier,
         name: c.name ?? "Unnamed device",
         product: c.product ?? "",
         serverMachineIdentifier: ctx.machineIdentifier,
-        busy: session ? { title: String(session.title ?? "Something"), ratingKey: String(session.ratingKey ?? "") } : null,
+        busy: session
+          ? {
+              title: isOwnSession ? String(session.title ?? "Something") : "Something else",
+              ratingKey: isOwnSession ? String(session.ratingKey ?? "") : "",
+            }
+          : null,
       });
     }
   }
