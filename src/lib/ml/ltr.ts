@@ -4,10 +4,18 @@
 // ONNX training API, and this is small enough that a hand-rolled trainer is
 // entirely reasonable).
 //
-// Label source: `interactions` rows with action='picked' (label 1) vs
-// 'skipped'/'snoozed' (label 0). Rows with only action='shown' and no
-// follow-up outcome yet are excluded from training — they're not a
-// negative, they're "no verdict yet."
+// Label source: 'skipped'/'snoozed' are label 0 directly — they're explicit
+// statements from someone looking straight at the title, true the moment
+// they happen. 'picked' is NOT taken at face value: it records the intention
+// to watch, not the watching, and someone who bails ten minutes in leaves an
+// identical row to someone who loved it. Every pick is therefore resolved
+// against Plex's current state (pickOutcome.ts) and only counts as label 1
+// once the watch is confirmed. An unconfirmed or abandoned pick is EXCLUDED,
+// never flipped to a negative — read that file's header for why a false
+// negative is worse than no row at all.
+//
+// Rows with only action='shown' and no follow-up outcome are likewise
+// excluded — they're not a negative, they're "no verdict yet."
 //
 // FEATURE TIMING: features are reconstructed from the user's CURRENT taste
 // signal (current centroid, current genre affinity, current median runtime)
@@ -31,8 +39,14 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { interactions, ltrModels, titles } from "@/db/schema";
+import { interactions, ltrModels, plexItems, titles } from "@/db/schema";
 import { getReconciledWatchHistory } from "@/lib/reconcile";
+import {
+  classifyPickOutcome,
+  readBaseline,
+  type PickBaselineShape,
+  type PickOutcome,
+} from "./pickOutcome";
 import { decodeVector, parseJsonStringArray } from "./embed";
 import type { MediaType } from "./key";
 import { titleKey } from "./key";
@@ -213,6 +227,38 @@ export interface LtrTrainResult {
  *  history, warm-started from the persisted model if one exists. Call this
  *  from an operator-triggered or scheduled job (e.g. after a batch of new
  *  feedback), never from the request path. */
+/** DB-reading adapter for pickOutcome.ts's pure rules — the only place a
+ *  playback state is fetched. Kept here rather than in pickOutcome.ts so
+ *  that module stays free of a db import and its rules stay unit-testable
+ *  (same reasoning as library.ts vs librarySync.ts). */
+function resolvePickOutcome(
+  userId: string,
+  tmdbId: number,
+  mediaType: MediaType,
+  pickedAt: Date,
+  baseline: PickBaselineShape | null,
+): PickOutcome {
+  const row = db
+    .select()
+    .from(plexItems)
+    .where(and(eq(plexItems.userId, userId), eq(plexItems.tmdbId, tmdbId), eq(plexItems.mediaType, mediaType)))
+    .get();
+
+  return classifyPickOutcome({
+    pickedAt,
+    baseline,
+    now: new Date(),
+    state: row
+      ? {
+          viewCount: row.viewCount ?? 0,
+          viewOffset: row.viewOffset ?? 0,
+          duration: row.duration ?? null,
+          lastViewedAt: row.lastViewedAt ?? null,
+        }
+      : null,
+  });
+}
+
 export function updateLtrModelForUser(userId: string): LtrTrainResult {
   const rows = db
     .select()
@@ -282,7 +328,19 @@ export function updateLtrModelForUser(userId: string): LtrTrainResult {
       sourceRating,
     });
 
-    examples.push({ features, label: row.action === "picked" ? 1 : 0 });
+    if (row.action === "picked") {
+      // A pick is an intention, not an outcome — resolve what actually
+      // happened before training on it. Anything not confirmed watched is
+      // EXCLUDED, never turned into a negative: see the header of
+      // pickOutcome.ts for why a false negative is worse than no row.
+      const outcome = resolvePickOutcome(userId, row.tmdbId, mediaType, row.createdAt, readBaseline(row.contextJson));
+      if (outcome.kind !== "watched") continue;
+      examples.push({ features, label: 1 });
+    } else {
+      // skipped / snoozed: explicit statements from someone looking straight
+      // at the title. Complete the moment they happen, nothing to resolve.
+      examples.push({ features, label: 0 });
+    }
   }
 
   const existing = db.select().from(ltrModels).where(eq(ltrModels.userId, userId)).get();

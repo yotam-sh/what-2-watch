@@ -30,6 +30,8 @@ import { DecideEmptyState } from "./DecideEmptyState";
 import { FilterButton } from "./FilterButton";
 import { FilterSheet } from "./FilterSheet";
 import { ModeSelector } from "./ModeSelector";
+import { PlayOnDevice } from "./PlayOnDevice";
+import { PlayTutorial } from "./PlayTutorial";
 import { PosterImage } from "./PosterImage";
 import { SwipeTutorial } from "./SwipeTutorial";
 
@@ -401,7 +403,14 @@ export function DecideScreen({ username }: { username: string }) {
           <p className="max-w-xs text-[13px] text-secondary">
             We&apos;ll remember you picked this — it helps future rolls get better.
           </p>
-          <Button onClick={() => roll({ seed: Date.now() })} variant="secondary">
+
+          {/* Additive: everything below can be empty, fail, or be switched
+              off and this screen still does its job. Deciding is the app's
+              purpose; starting it on a television is a convenience on top. */}
+          <PlayOnDevice tmdbId={candidate.tmdbId} mediaType={candidate.mediaType} title={candidate.title} />
+          <PlayTutorial />
+
+          <Button onClick={() => roll({ seed: Date.now() })} variant="ghost" size="sm">
             Roll for next time
           </Button>
         </div>

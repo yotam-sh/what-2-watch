@@ -111,6 +111,7 @@ export interface RawPlexVideo extends GuidBearingItem {
   viewCount?: unknown;
   lastViewedAt?: unknown;
   viewOffset?: unknown;
+  duration?: unknown;
   leafCount?: unknown;
   viewedLeafCount?: unknown;
   grandparentRatingKey?: unknown;
@@ -124,6 +125,10 @@ export interface NormalizedPlexItem {
   viewCount: number;
   lastViewedAt?: number; // epoch seconds
   viewOffset?: number;
+  /** Total runtime in milliseconds, as Plex reports it. Needed to turn a
+   *  raw viewOffset into a completion *fraction* — 4% watched and 95%
+   *  watched are both "stopped early" without it. */
+  duration?: number;
   leafCount?: number;
   viewedLeafCount?: number;
   grandparentRatingKey?: string;
@@ -143,6 +148,7 @@ export function normalizePlexVideo(raw: RawPlexVideo): NormalizedPlexItem | null
     viewCount: coerceInt(raw.viewCount) ?? 0,
     lastViewedAt: coerceInt(raw.lastViewedAt),
     viewOffset: coerceInt(raw.viewOffset),
+    duration: coerceInt(raw.duration),
     leafCount: coerceInt(raw.leafCount),
     viewedLeafCount: coerceInt(raw.viewedLeafCount),
     grandparentRatingKey: coerceString(raw.grandparentRatingKey),

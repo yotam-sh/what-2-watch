@@ -1,0 +1,1 @@
+ALTER TABLE `plex_items` ADD `duration` integer;

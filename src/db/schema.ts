@@ -264,6 +264,14 @@ export const plexItems = sqliteTable(
     viewCount: integer("view_count").default(0),
     lastViewedAt: integer("last_viewed_at", { mode: "timestamp" }),
     viewOffset: integer("view_offset"),
+    // Total runtime in milliseconds, straight from Plex. Stored so a
+    // viewOffset can be turned into a completion *fraction*: 4% watched and
+    // 95% watched are both "stopped before the end" without it, and telling
+    // those apart is the whole basis for deciding whether a pick was really
+    // watched (see src/lib/ml/ltr.ts's label resolution). Nullable — rows
+    // written before this column existed, and any item Plex doesn't report a
+    // duration for, simply resolve as "unknown" rather than guessing.
+    duration: integer("duration"),
     leafCount: integer("leaf_count"),
     viewedLeafCount: integer("viewed_leaf_count"),
     createdAt: createdAt(),

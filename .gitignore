@@ -50,3 +50,6 @@ next-env.d.ts
 
 # local agent tooling config — not part of the app
 .claude/
+
+# Local-only experiments and probes — never committed.
+/local/

@@ -20,6 +20,52 @@ consciously deferred, not because they were missed — each says why.
   authentically over HTTPS, so the deployed instance is the only honest place
   to measure this.
 
+## Slow fire
+
+- **"Play on…" buttons on Continue and Rewatch**
+  The control exists and works (`src/components/PlayOnDevice.tsx`); it's only
+  wired to the Decide verdict screen. Continue is arguably the strongest case
+  for it — resume offsets were measured exact to ~200ms — and Rewatch is the
+  obvious second. Both are Server Components, so each needs a small client
+  island rather than a direct drop-in. Deliberately deferred, not forgotten.
+
+- **Server-down: don't offer playback, and don't punish the pick**
+  If the Plex server is unreachable, "Play on…" should be suppressed rather
+  than offered and then failing — `listPlayers()` already returns an empty
+  list in that case, so the UI degrades to the "no player awake" hint, which
+  is *misleading*: the cause is the server, not the device.
+  The sharper question is what happens to the choice. A pick is still
+  recorded, but the user cannot act on it — and `pickOutcome.ts` would later
+  resolve it as "never started" and, after the 21-day grace, `abandoned`.
+  That's wrong: they didn't lose interest, the server was down. Options
+  include recording server reachability in the pick's baseline, or treating
+  "no Plex row / unreachable server" as permanently unresolved rather than
+  abandoned. Wants deciding before a real outage quietly poisons a batch of
+  labels.
+
+- **A brief play is recorded as a full watch**
+  `upsertMovieWatch` writes a `watch_events` row whenever Plex's
+  `lastViewedAt` advances, and Plex advances that as soon as playback starts
+  — not at its 90% "watched" threshold, which is what increments `viewCount`.
+  So sampling five minutes of a film and abandoning it produces the same
+  watch event as sitting through the whole thing, and the title drops out of
+  the Discover pool for good.
+  The taste centroid is *not* affected (`selectCentroidSignals` requires
+  `viewCount >= 2` or a Letterboxd rating ≥ 3.5, and a brief play increments
+  neither), so this is a "have I seen this" problem, not a taste problem.
+  Fix is probably to gate the event on a completion fraction —
+  `viewOffset / duration` — rather than on `lastViewedAt` alone. Needs
+  `duration` stored, which the scan doesn't currently keep.
+
+- **`picked` records intent, not enjoyment**
+  The swipe-up verdict writes `action: 'picked'` the instant a user chooses,
+  before a single frame has played. If they bail after ten minutes, LTR still
+  trains on it as a positive label, and CF counts it as a positive signal.
+  Now that playback control exists, the loop could actually be closed: we
+  know when a session starts and can observe how far it got, so a `picked`
+  whose playback was abandoned early could be downgraded. Worth doing before
+  LTR crosses its 30-label threshold and starts learning from it.
+
 ## Known limitations
 
 - **Multi-server sync ships wired, but sequentially**

@@ -99,6 +99,7 @@ export function upsertMovieWatch(params: UpsertMovieParams): void {
       viewCount: item.viewCount,
       lastViewedAt: newLastViewedAt ?? undefined,
       viewOffset: item.viewOffset ?? undefined,
+      duration: item.duration ?? undefined,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -109,6 +110,7 @@ export function upsertMovieWatch(params: UpsertMovieParams): void {
         viewCount: item.viewCount,
         lastViewedAt: newLastViewedAt ?? undefined,
         viewOffset: item.viewOffset ?? undefined,
+        duration: item.duration ?? undefined,
         updatedAt: new Date(),
       },
     })
